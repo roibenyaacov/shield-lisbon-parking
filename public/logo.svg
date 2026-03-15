@@ -1,0 +1,11 @@
+﻿<svg width="512" height="512" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#34C759;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#2C3E50;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="120" fill="url(#grad)"/>
+  <path d="M 150 200 L 256 150 L 362 200 L 362 300 L 256 350 L 150 300 Z" fill="white" opacity="0.9"/>
+  <text x="256" y="420" font-family="Arial, sans-serif" font-size="48" fill="white" text-anchor="middle" font-weight="bold">SHIELD</text>
+</svg>
