@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { sendWaitlistPromotionEmail } from '@/lib/resend'
-import type { Profile, ParkingSpot, Waitlist } from '@/types/db'
+import type { Profile, ParkingSpot } from '@/types/db'
 
 export async function POST(request: Request) {
   try {
@@ -15,7 +15,8 @@ export async function POST(request: Request) {
     const body = await request.json()
     const { date, spot_id, user_id, action } = body
 
-    if (!date || !spot_id) {
+    // ── Input validation ──────────────────────────────────────────────
+    if (!date || spot_id === undefined || spot_id === null) {
       return NextResponse.json({ error: 'Missing date or spot_id' }, { status: 400 })
     }
 
@@ -23,9 +24,35 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
+    if (typeof spot_id !== 'number' || !Number.isInteger(spot_id) || spot_id <= 0) {
+      return NextResponse.json({ error: 'Invalid spot_id' }, { status: 400 })
+    }
+
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || isNaN(new Date(date).getTime())) {
+      return NextResponse.json({ error: 'Invalid date format' }, { status: 400 })
+    }
+
+    if (action !== 'release' && action !== 'reclaim') {
+      return NextResponse.json({ error: 'Invalid action' }, { status: 400 })
+    }
+    // ─────────────────────────────────────────────────────────────────
+
     const serviceClient = await createServiceClient()
 
+    // ── RECLAIM ───────────────────────────────────────────────────────
     if (action === 'reclaim') {
+      // Only fixed-spot owners may reclaim — verify the spot belongs to them
+      const { data: fixedSpot } = await serviceClient
+        .from('parking_spots')
+        .select('id')
+        .eq('id', spot_id)
+        .eq('fixed_user_id', user.id)
+        .single()
+
+      if (!fixedSpot) {
+        return NextResponse.json({ error: 'You do not own this fixed spot' }, { status: 403 })
+      }
+
       const { error: insertError } = await serviceClient
         .from('weekly_allocations')
         .upsert({
@@ -42,81 +69,64 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: true, reclaimed: true })
     }
 
-    const { error: deleteError } = await serviceClient
-      .from('weekly_allocations')
-      .delete()
-      .eq('user_id', user.id)
-      .eq('date', date)
-      .eq('spot_id', spot_id)
-
-    if (deleteError) {
-      return NextResponse.json({ error: deleteError.message }, { status: 500 })
-    }
-
-    const { data: rawWaitlist } = await serviceClient
-      .from('waitlist')
-      .select('*')
-      .eq('date', date)
-      .order('created_at', { ascending: true })
-      .limit(1)
-      .single()
-
-    const waitlistEntry = rawWaitlist as Waitlist | null
-
-    if (waitlistEntry) {
-      const { error: assignError } = await serviceClient
-        .from('weekly_allocations')
-        .insert({
-          user_id: waitlistEntry.user_id,
-          spot_id: spot_id,
-          date: date,
-          pass_number: 4,
-        } as any)
-
-      if (!assignError) {
-        await serviceClient
-          .from('waitlist')
-          .delete()
-          .eq('id', waitlistEntry.id)
-
-        try {
-          const { data: rawProfile } = await serviceClient
-            .from('profiles')
-            .select('*')
-            .eq('id', waitlistEntry.user_id)
-            .single()
-
-          const promotedProfile = rawProfile as Profile | null
-
-          const { data: rawSpot } = await serviceClient
-            .from('parking_spots')
-            .select('*')
-            .eq('id', spot_id)
-            .single()
-
-          const spot = rawSpot as ParkingSpot | null
-
-          if (promotedProfile?.email && spot) {
-            await sendWaitlistPromotionEmail(
-              promotedProfile.email,
-              promotedProfile.full_name ?? 'User',
-              spot.label,
-              date
-            )
-          }
-        } catch (emailError) {
-          console.error('Waitlist promotion email error:', emailError)
-        }
-      }
-
-      return NextResponse.json({
-        success: true,
-        released: true,
-        promoted_user: waitlistEntry.user_id,
+    // ── RELEASE (atomic via RPC) ──────────────────────────────────────
+    // release_and_promote runs inside a single PostgreSQL transaction:
+    //   1. Verifies the user owns the allocation (row-level lock).
+    //   2. Deletes the allocation.
+    //   3. Promotes the first waitlist entry for that date (if any).
+    // This prevents race conditions where two concurrent releases could
+    // promote the same waitlist entry or orphan a spot.
+    const { data: rpcResult, error: rpcError } = await serviceClient
+      .rpc('release_and_promote', {
+        p_user_id: user.id,
+        p_spot_id: spot_id,
+        p_date:    date,
       })
+
+    if (rpcError) {
+      return NextResponse.json({ error: rpcError.message }, { status: 500 })
     }
 
-    return NextResponse.json({ success: true, released: true, promoted_user: null })
+    const result = rpcResult as {
+      released?: boolean
+      promoted_user_id?: string | null
+      error?: string
+    }
+
+    if (result.error) {
+      return NextResponse.json({ error: result.error }, { status: 403 })
+    }
+
+    // Email is sent outside the DB transaction — a send failure never
+    // rolls back the already-committed allocation change.
+    if (result.promoted_user_id) {
+      try {
+        const [{ data: rawProfile }, { data: rawSpot }] = await Promise.all([
+          serviceClient.from('profiles').select('*').eq('id', result.promoted_user_id).single(),
+          serviceClient.from('parking_spots').select('*').eq('id', spot_id).single(),
+        ])
+
+        const promotedProfile = rawProfile as Profile | null
+        const spot = rawSpot as ParkingSpot | null
+
+        if (promotedProfile?.email && spot) {
+          await sendWaitlistPromotionEmail(
+            promotedProfile.email,
+            promotedProfile.full_name ?? 'User',
+            spot.label,
+            date
+          )
+        }
+      } catch (emailError) {
+        console.error('Waitlist promotion email error:', emailError)
+      }
+    }
+
+    return NextResponse.json({
+      success: true,
+      released: true,
+      promoted_user: result.promoted_user_id ?? null,
+    })
   } catch (error) {
     console.error('Release error:', error)
     return NextResponse.json(

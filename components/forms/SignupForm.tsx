@@ -147,16 +147,10 @@ export function SignupForm() {
       return
     }
 
-    if (data.user) {
-      await supabase
-        .from('profiles')
-        .update({
-          full_name: fullName,
-          team,
-          vehicle_type: vehicleType,
-        } as any)
-        .eq('id', data.user.id)
-    }
+    // Profile is created by the handle_new_user database trigger using the
+    // metadata passed above.  No client-side update is needed here — the
+    // user has no confirmed session yet so any direct table write would be
+    // blocked by RLS anyway.
 
     setStep('otp')
     setResendCountdown(60)

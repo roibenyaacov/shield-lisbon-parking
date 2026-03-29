@@ -1,15 +1,17 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { runAllocation, saveAllocations } from '@/lib/allocation'
-import { nextMonday, format } from 'date-fns'
+import { nextMonday, addDays, format } from 'date-fns'
 import { sendAllocationEmails } from '@/lib/resend'
 import type { Profile } from '@/types/db'
 
 async function handleAllocate(request: NextRequest, weekStartOverride?: string) {
   const authHeader = request.headers.get('authorization')
-
   const cronSecret = process.env.CRON_SECRET
-  const isCronAuthed = cronSecret && authHeader === `Bearer ${cronSecret}`
+
+  // !!cronSecret ensures an empty/missing secret never accidentally
+  // matches an empty Authorization header.
+  const isCronAuthed = !!cronSecret && authHeader === `Bearer ${cronSecret}`
 
   if (!isCronAuthed) {
     const userClient = await createClient()
@@ -31,8 +33,43 @@ async function handleAllocate(request: NextRequest, weekStartOverride?: string) 
     }
   }
 
+  // ── Validate week_start if provided ──────────────────────────────────
+  if (weekStartOverride !== undefined) {
+    if (
+      !/^\d{4}-\d{2}-\d{2}$/.test(weekStartOverride) ||
+      isNaN(new Date(weekStartOverride).getTime())
+    ) {
+      return NextResponse.json(
+        { error: 'Invalid week_start. Expected YYYY-MM-DD.' },
+        { status: 400 }
+      )
+    }
+  }
+
   const serviceClient = await createServiceClient()
   const weekStart = weekStartOverride ?? format(nextMonday(new Date()), 'yyyy-MM-dd')
+  const weekEnd   = format(addDays(new Date(weekStart), 4), 'yyyy-MM-dd')
+
+  // ── Idempotency guard ─────────────────────────────────────────────────
+  // If allocations already exist for this week (e.g. cron fired twice or
+  // an admin re-triggered), bail out early to prevent duplicate emails
+  // and non-deterministic re-allocation.
+  const { data: existingAlloc } = await serviceClient
+    .from('weekly_allocations')
+    .select('id')
+    .gte('date', weekStart)
+    .lte('date', weekEnd)
+    .limit(1)
+    .maybeSingle()
+
+  if (existingAlloc) {
+    return NextResponse.json({
+      success:      true,
+      week_start:   weekStart,
+      already_run:  true,
+      message:      'Allocations already exist for this week.',
+    })
+  }
 
   const { allocations, waitlisted } = await runAllocation(serviceClient, weekStart)
   await saveAllocations(serviceClient, weekStart, allocations, waitlisted)
@@ -44,10 +81,10 @@ async function handleAllocate(request: NextRequest, weekStartOverride?: string) 
   }
 
   return NextResponse.json({
-    success: true,
-    week_start: weekStart,
+    success:           true,
+    week_start:        weekStart,
     allocations_count: allocations.length,
-    waitlisted_count: waitlisted.length,
+    waitlisted_count:  waitlisted.length,
   })
 }
 

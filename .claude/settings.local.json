@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(claude install:*)",
+      "Bash(find /c/Users/roi23/OneDrive/Desktop/shield-portugal -type f -name *.env*)"
+    ]
+  }
+}
