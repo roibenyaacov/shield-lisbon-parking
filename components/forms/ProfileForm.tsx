@@ -67,7 +67,7 @@ export function ProfileForm({ userId, initialName }: { userId: string; initialNa
         type="text"
         value={fullName}
         onChange={(e) => setFullName(e.target.value)}
-        placeholder="Your full name"
+        placeholder="Full name"
         icon={<User className="w-4 h-4" />}
         required
       />

@@ -148,12 +148,12 @@ BEGIN
 
   -- Auto-assign fixed spots based on email
   -- Spot 39 → Raíssa Ramos
-  IF NEW.email = 'raissa.ramos@shield-ai.com' THEN
+  IF NEW.email = 'raissa.ramos@shieldfc.com' THEN
     UPDATE public.parking_spots SET fixed_user_id = NEW.id WHERE label = '39';
   END IF;
 
   -- Spot 49 → Rita Vaz
-  IF NEW.email = 'rita.vaz@shield-ai.com' THEN
+  IF NEW.email = 'rita.vaz@shieldfc.com' THEN
     UPDATE public.parking_spots SET fixed_user_id = NEW.id WHERE label = '49';
   END IF;
 
@@ -287,13 +287,13 @@ INSERT INTO parking_spots (label, priority) VALUES
   ('51', 'general');
 
 -- Fixed spots are auto-assigned via the handle_new_user() trigger:
---   Spot 39 → raissa.ramos@shield-ai.com
---   Spot 49 → rita.vaz@shield-ai.com
+--   Spot 39 → raissa.ramos@shieldfc.com
+--   Spot 49 → rita.vaz@shieldfc.com
 -- When these users sign up, their spots are linked automatically.
 --
 -- To change emails, update the IF conditions in handle_new_user() above.
 -- To manually assign after the fact:
---   UPDATE parking_spots SET fixed_user_id = (SELECT id FROM profiles WHERE email = 'someone@shield-ai.com') WHERE label = '39';
+--   UPDATE parking_spots SET fixed_user_id = (SELECT id FROM profiles WHERE email = 'someone@shieldfc.com') WHERE label = '39';
 
 -- ============================================
 -- ENABLE REALTIME

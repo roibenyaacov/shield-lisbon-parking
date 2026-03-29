@@ -45,3 +45,6 @@ export const REQUEST_OPEN_DAY = 3 // Wednesday (0=Sun)
 export const REQUEST_OPEN_HOUR = 19 // 19:00
 
 export const MAX_DAYS_PER_USER = 3
+
+export const ALLOCATION_DAY = 5 // Friday (0=Sun)
+export const ALLOCATION_HOUR = 8 // 08:00 Lisbon time

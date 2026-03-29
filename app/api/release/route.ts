@@ -12,7 +12,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { date, spot_id, user_id } = await request.json()
+    const body = await request.json()
+    const { date, spot_id, user_id, action } = body
 
     if (!date || !spot_id) {
       return NextResponse.json({ error: 'Missing date or spot_id' }, { status: 400 })
@@ -23,6 +24,23 @@ export async function POST(request: Request) {
     }
 
     const serviceClient = await createServiceClient()
+
+    if (action === 'reclaim') {
+      const { error: insertError } = await serviceClient
+        .from('weekly_allocations')
+        .upsert({
+          user_id: user.id,
+          spot_id,
+          date,
+          pass_number: 0,
+        } as any, { onConflict: 'user_id,date' })
+
+      if (insertError) {
+        return NextResponse.json({ error: insertError.message }, { status: 500 })
+      }
+
+      return NextResponse.json({ success: true, reclaimed: true })
+    }
 
     const { error: deleteError } = await serviceClient
       .from('weekly_allocations')

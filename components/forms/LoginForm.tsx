@@ -52,7 +52,7 @@ export function LoginForm() {
         type="email"
         value={email}
         onChange={(e) => setEmail(e.target.value)}
-        placeholder="you@shield.ai"
+        placeholder="Email Address"
         icon={<Mail className="w-4 h-4" />}
         required
       />
@@ -70,7 +70,7 @@ export function LoginForm() {
             type={showPassword ? 'text' : 'password'}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            placeholder="Your password"
+            placeholder="Password"
             required
             className="w-full h-12 rounded-xl border border-slate-200 bg-white text-sm pl-11 pr-12 transition-all duration-200 focus:border-blue-600 focus:ring-2 focus:ring-blue-600/20 focus:outline-none touch-manipulation"
           />
@@ -82,6 +82,15 @@ export function LoginForm() {
             {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
           </button>
         </div>
+      </div>
+
+      <div className="flex justify-start -mt-1">
+        <Link
+          href="/forgot-password"
+          className="text-sm text-blue-600 font-medium hover:underline active:scale-95 transition-all touch-manipulation"
+        >
+          Forgot password?
+        </Link>
       </div>
 
       {error && (
