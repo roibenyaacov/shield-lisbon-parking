@@ -16,7 +16,11 @@
 -- ============================================
 
 CREATE OR REPLACE FUNCTION handle_new_user()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public          -- Required: trigger fires from auth schema; without this,
+AS $$                             -- PostgreSQL won't find team_enum / vehicle_type_enum in public.
 DECLARE
   v_team         team_enum;
   v_vehicle_type vehicle_type_enum;
@@ -62,7 +66,7 @@ EXCEPTION WHEN others THEN
   RAISE WARNING 'handle_new_user failed for user %: %', NEW.id, SQLERRM;
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$;
 
 
 -- ============================================

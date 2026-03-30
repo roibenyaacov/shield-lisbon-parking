@@ -19,7 +19,7 @@ const vehicleIcons: Record<string, typeof Car> = {
 
 function OTPInput({ value, onChange }: { value: string; onChange: (val: string) => void }) {
   const inputRefs = useRef<(HTMLInputElement | null)[]>([])
-  const digits = value.padEnd(6, '').split('').slice(0, 6)
+  const digits = value.padEnd(6, ' ').split('').slice(0, 6)
 
   const focusInput = (index: number) => {
     inputRefs.current[index]?.focus()
