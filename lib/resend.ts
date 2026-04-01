@@ -14,7 +14,8 @@ function getResend() {
 
 const FROM_EMAIL = 'Shield Parking <parking@shield-parking.com>'
 
-const LOGO_URL = 'https://shield-parking.com/logo.png'
+const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://shield-parking.com'
+const LOGO_URL = `${BASE_URL}/logo.png`
 
 function emailWrapper(content: string): string {
   return `<!DOCTYPE html>
@@ -24,25 +25,20 @@ function emailWrapper(content: string): string {
   <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#F2F2F7;padding:40px 20px;">
     <tr>
       <td align="center">
-        <table width="100%" cellpadding="0" cellspacing="0" style="max-width:440px;background-color:#FFFFFF;border-radius:24px;overflow:hidden;box-shadow:0 10px 15px -3px rgba(0,0,0,0.1),0 4px 6px -2px rgba(0,0,0,0.05);">
-          <!-- Header -->
+        <table width="100%" cellpadding="0" cellspacing="0" style="max-width:440px;background-color:#FFFFFF;border-radius:24px;overflow:hidden;box-shadow:0 10px 15px -3px rgba(0,0,0,0.1);">
           <tr>
-            <td style="background:linear-gradient(135deg,#1e3a5f 0%,#2C3E50 100%);padding:28px 32px;text-align:center;">
-              <img src="${LOGO_URL}" alt="Shield" width="120" style="display:inline-block;height:auto;margin-bottom:8px;" />
-              <p style="margin:0;color:rgba(255,255,255,0.7);font-size:13px;font-weight:500;letter-spacing:0.5px;">Lisbon Office Parking</p>
+            <td style="padding:32px 32px 16px;text-align:center;">
+              <img src="${LOGO_URL}" alt="Shield" width="140" style="display:inline-block;height:auto;" />
             </td>
           </tr>
-          <!-- Body -->
           <tr>
-            <td style="padding:32px;">
+            <td style="padding:16px 32px 32px;">
               ${content}
             </td>
           </tr>
-          <!-- Footer -->
           <tr>
             <td style="padding:0 32px 24px;text-align:center;border-top:1px solid #F2F2F7;">
               <p style="margin:16px 0 0;color:#C7C7CC;font-size:11px;">Shield &middot; Lisbon, Portugal</p>
-              <p style="margin:4px 0 0;color:#D1D1D6;font-size:10px;">Automated message, please don&rsquo;t reply.</p>
             </td>
           </tr>
         </table>
@@ -53,99 +49,118 @@ function emailWrapper(content: string): string {
 </html>`
 }
 
-function spotConfirmedHtml(
+function weeklyAllocationHtml(
   name: string,
-  assignments: { date: string; spotLabel: string }[]
+  assignments: { date: string; spotLabel: string }[],
+  waitlistedDays: string[]
 ): string {
-  const rows = assignments
+  const hasSpots = assignments.length > 0
+  const hasWaitlist = waitlistedDays.length > 0
+
+  const spotRows = assignments
     .map(
       (a) =>
         `<tr>
-          <td style="padding:12px 16px;border-bottom:1px solid #F2F2F7;font-size:14px;color:#1a1a1a;">${format(new Date(a.date), 'EEEE, MMM d')}</td>
-          <td style="padding:12px 16px;border-bottom:1px solid #F2F2F7;font-size:14px;color:#1a1a1a;font-weight:700;text-align:right;">Spot #${a.spotLabel}</td>
+          <td style="padding:14px 16px;border-bottom:1px solid #F0F0F5;font-size:14px;color:#1a1a1a;">${format(new Date(a.date), 'EEEE, MMM d')}</td>
+          <td style="padding:14px 16px;border-bottom:1px solid #F0F0F5;text-align:right;">
+            <span style="display:inline-block;background:#2563EB;color:#FFFFFF;font-size:13px;font-weight:700;padding:6px 14px;border-radius:20px;">${a.spotLabel}</span>
+          </td>
         </tr>`
     )
     .join('')
 
-  return emailWrapper(`
-    <div style="text-align:center;margin-bottom:24px;">
-      <div style="font-size:32px;margin-bottom:8px;">🎉</div>
-      <h2 style="margin:0 0 4px;color:#1a1a1a;font-size:22px;font-weight:700;">You Got a Spot!</h2>
-      <p style="margin:0;color:#8E8E93;font-size:14px;">Your parking for next week is confirmed</p>
-    </div>
-
-    <p style="margin:0 0 20px;color:#3C3C43;font-size:15px;">Hi ${name},</p>
-
-    <p style="margin:0 0 16px;color:#8E8E93;font-size:14px;line-height:1.5;">Great news! Your parking spots have been allocated. Here are your assignments:</p>
-
-    <table style="width:100%;border-collapse:collapse;background:#F8F9FA;border-radius:16px;overflow:hidden;margin:0 0 20px;">
-      <thead>
-        <tr style="background:#EEF2FF;">
-          <th style="padding:10px 16px;text-align:left;font-size:11px;color:#6366F1;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">Day</th>
-          <th style="padding:10px 16px;text-align:right;font-size:11px;color:#6366F1;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">Spot</th>
-        </tr>
-      </thead>
-      <tbody>${rows}</tbody>
-    </table>
-
-    <a href="https://shield-parking.com/dashboard" style="display:block;background:#2563EB;color:#FFFFFF;text-decoration:none;text-align:center;padding:14px 24px;border-radius:14px;font-size:15px;font-weight:600;margin:0 0 20px;">Open in app</a>
-
-    <p style="margin:0;color:#AEAEB2;font-size:12px;text-align:center;line-height:1.5;">
-      If you can&rsquo;t make it, please release your spot in the app so someone else can use it.
-    </p>
-  `)
-}
-
-function waitlistUpdateHtml(name: string, spotLabel: string, date: string): string {
-  return emailWrapper(`
-    <div style="text-align:center;margin-bottom:24px;">
-      <div style="font-size:32px;margin-bottom:8px;">🎉</div>
-      <h2 style="margin:0 0 4px;color:#1a1a1a;font-size:22px;font-weight:700;">You Got a Spot!</h2>
-      <p style="margin:0;color:#8E8E93;font-size:14px;">A spot just opened up for you</p>
-    </div>
-
-    <p style="margin:0 0 20px;color:#3C3C43;font-size:15px;">Hi ${name},</p>
-
-    <p style="margin:0 0 20px;color:#8E8E93;font-size:14px;line-height:1.5;">Great news! A parking spot has been allocated to you from the waitlist. Your booking is confirmed.</p>
-
-    <!-- Spot Badge -->
-    <div style="background:#EEF2FF;border:2px solid #C7D2FE;border-radius:20px;padding:20px;text-align:center;margin:0 0 16px;">
-      <p style="margin:0;color:#2563EB;font-size:28px;font-weight:800;letter-spacing:1px;">Spot ${spotLabel}</p>
-    </div>
-
-    <p style="margin:0 0 24px;color:#3C3C43;font-size:14px;">
-      <strong style="color:#1a1a1a;">Date:</strong> ${format(new Date(date), 'EEEE, MMMM d, yyyy')}
-    </p>
-
-    <a href="https://shield-parking.com/dashboard" style="display:block;background:#2563EB;color:#FFFFFF;text-decoration:none;text-align:center;padding:14px 24px;border-radius:14px;font-size:15px;font-weight:600;margin:0 0 20px;">Open in app</a>
-
-    <p style="margin:0;color:#AEAEB2;font-size:12px;text-align:center;line-height:1.5;">
-      You&rsquo;ve been automatically moved from the waitlist. Enjoy your parking!
-    </p>
-  `)
-}
-
-function noSpotsHtml(name: string, waitlistedDays: string[]): string {
-  const daysList = waitlistedDays
-    .map(d => `<li style="padding:6px 0;color:#3C3C43;font-size:14px;">${format(new Date(d), 'EEEE, MMM d')}</li>`)
+  const waitlistRows = waitlistedDays
+    .map(
+      (d) =>
+        `<tr>
+          <td style="padding:14px 16px;border-bottom:1px solid #F0F0F5;font-size:14px;color:#1a1a1a;">${format(new Date(d), 'EEEE, MMM d')}</td>
+          <td style="padding:14px 16px;border-bottom:1px solid #F0F0F5;text-align:right;">
+            <span style="display:inline-block;background:#FFF7ED;border:1px solid #FED7AA;color:#C2410C;font-size:13px;font-weight:600;padding:6px 14px;border-radius:20px;">Waitlist</span>
+          </td>
+        </tr>`
+    )
     .join('')
 
+  const title = hasSpots
+    ? 'Your Parking for Next Week'
+    : 'You&rsquo;re on the Waitlist'
+
+
+  const spotsSection = hasSpots
+    ? `<div style="background:#F0F0FF;border:2px solid #D4D4FF;border-radius:16px;overflow:hidden;margin:0 0 20px;">
+        <table style="width:100%;border-collapse:collapse;">
+          <thead>
+            <tr>
+              <th style="padding:12px 16px;text-align:left;font-size:11px;color:#6366F1;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">Day</th>
+              <th style="padding:12px 16px;text-align:right;font-size:11px;color:#6366F1;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">Your Spot</th>
+            </tr>
+          </thead>
+          <tbody style="background:#FFFFFF;">${spotRows}</tbody>
+        </table>
+      </div>`
+    : ''
+
+  const waitlistSection = hasWaitlist
+    ? `${hasSpots ? '<p style="margin:0 0 12px;color:#8E8E93;font-size:14px;line-height:1.5;">You&rsquo;re on the waitlist for these days:</p>' : '<p style="margin:0 0 12px;color:#8E8E93;font-size:14px;line-height:1.5;">You&rsquo;ve been placed on the waitlist for:</p>'}
+      <div style="background:#FFF7ED;border:2px solid #FED7AA;border-radius:16px;overflow:hidden;margin:0 0 20px;">
+        <table style="width:100%;border-collapse:collapse;">
+          <thead>
+            <tr>
+              <th style="padding:12px 16px;text-align:left;font-size:11px;color:#C2410C;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">Day</th>
+              <th style="padding:12px 16px;text-align:right;font-size:11px;color:#C2410C;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">Status</th>
+            </tr>
+          </thead>
+          <tbody style="background:#FFFFFF;">${waitlistRows}</tbody>
+        </table>
+      </div>
+      <div style="background:#F0F0FF;border:2px solid #D4D4FF;border-radius:16px;padding:16px 20px;margin:0 0 20px;">
+        <p style="margin:0;color:#3C3C43;font-size:13px;line-height:1.6;text-align:center;">
+          If someone releases their spot, you&rsquo;ll be <strong>automatically assigned</strong> and notified by email.
+        </p>
+      </div>`
+    : ''
+
   return emailWrapper(`
-    <div style="text-align:center;margin-bottom:24px;">
-      <div style="font-size:32px;margin-bottom:8px;">⏳</div>
-      <h2 style="margin:0 0 4px;color:#1a1a1a;font-size:22px;font-weight:700;">You're on the Waitlist</h2>
-      <p style="margin:0;color:#8E8E93;font-size:14px;">All spots are taken, but don't worry</p>
-    </div>
+    <h2 style="margin:0 0 24px;color:#1a1a1a;font-size:22px;font-weight:700;text-align:center;">${title}</h2>
 
     <p style="margin:0 0 20px;color:#3C3C43;font-size:15px;">Hi ${name},</p>
 
-    <p style="margin:0 0 16px;color:#8E8E93;font-size:14px;line-height:1.5;">Unfortunately, all parking spots have been allocated this week. You've been placed on the waitlist for:</p>
+    ${hasSpots ? '<p style="margin:0 0 16px;color:#8E8E93;font-size:14px;line-height:1.5;">Here are your parking allocations:</p>' : ''}
 
-    <ul style="margin:0 0 20px;padding-left:20px;background:#FFF7ED;border-radius:16px;padding:16px 16px 16px 36px;">${daysList}</ul>
+    ${spotsSection}
+    ${waitlistSection}
 
-    <p style="margin:0 0 20px;color:#8E8E93;font-size:14px;line-height:1.5;">If someone releases their spot, you'll be automatically assigned and notified by email.</p>
+    <a href="https://shield-parking.com/dashboard" style="display:block;background:#2563EB;color:#FFFFFF;text-decoration:none;text-align:center;padding:14px 24px;border-radius:14px;font-size:15px;font-weight:600;margin:0 0 20px;">View in App</a>
 
-    <a href="https://shield-parking.com/dashboard" style="display:block;background:#2563EB;color:#FFFFFF;text-decoration:none;text-align:center;padding:14px 24px;border-radius:14px;font-size:15px;font-weight:600;margin:0 0 20px;">Open in app</a>
+    <p style="margin:0;color:#AEAEB2;font-size:12px;text-align:center;line-height:1.5;">
+      Can&rsquo;t make it? Release your spot in the app so someone else can use it.
+    </p>
+  `)
+}
+
+function waitlistPromotionHtml(name: string, spotLabel: string, date: string): string {
+  return emailWrapper(`
+    <h2 style="margin:0 0 4px;color:#1a1a1a;font-size:22px;font-weight:700;text-align:center;">A Spot Opened Up!</h2>
+    <p style="margin:0 0 24px;color:#8E8E93;font-size:14px;text-align:center;">You&rsquo;ve been moved from the waitlist</p>
+
+    <p style="margin:0 0 20px;color:#3C3C43;font-size:15px;">Hi ${name},</p>
+
+    <p style="margin:0 0 20px;color:#8E8E93;font-size:14px;line-height:1.5;">Someone released their parking spot and it&rsquo;s now yours:</p>
+
+    <div style="background:#F0F0FF;border:2px solid #D4D4FF;border-radius:16px;padding:24px;text-align:center;margin:0 0 8px;">
+      <p style="margin:0 0 6px;color:#6366F1;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;">Your Spot</p>
+      <p style="margin:0;font-size:36px;font-weight:700;color:#1a1a1a;letter-spacing:2px;">${spotLabel}</p>
+    </div>
+
+    <p style="margin:0 0 24px;color:#8E8E93;font-size:14px;text-align:center;">
+      ${format(new Date(date), 'EEEE, MMMM d, yyyy')}
+    </p>
+
+    <a href="https://shield-parking.com/dashboard" style="display:block;background:#2563EB;color:#FFFFFF;text-decoration:none;text-align:center;padding:14px 24px;border-radius:14px;font-size:15px;font-weight:600;margin:0 0 20px;">View in App</a>
+
+    <p style="margin:0;color:#AEAEB2;font-size:12px;text-align:center;line-height:1.5;">
+      This was assigned automatically from the waitlist. Enjoy your parking!
+    </p>
   `)
 }
 
@@ -187,39 +202,38 @@ export async function sendAllocationEmails(
     const profile = profileMap.get(userId)
     if (!profile?.email) continue
 
-    const allocs = userAllocations.get(userId)
-    const waitDays = userWaitlist.get(userId)
+    const allocs = userAllocations.get(userId) ?? []
+    const waitDays = userWaitlist.get(userId) ?? []
 
-    if (allocs && allocs.length > 0) {
-      const assignments = allocs
-        .map((a) => ({
-          date: a.date,
-          spotLabel: spotMap.get(a.spot_id)?.label ?? '?',
-        }))
-        .sort((a, b) => a.date.localeCompare(b.date))
+    if (allocs.length === 0 && waitDays.length === 0) continue
 
-      try {
-        await getResend().emails.send({
-          from: FROM_EMAIL,
-          to: profile.email,
-          subject: `🅿️ Parking Confirmed — Week of ${format(new Date(assignments[0].date), 'MMM d')}`,
-          html: spotConfirmedHtml(profile.full_name ?? 'Team Member', assignments),
-        })
-      } catch (err) {
-        console.error(`Failed to send allocation email to ${profile.email}:`, err)
-      }
-    } else if (waitDays && waitDays.length > 0) {
-      const sortedDays = [...waitDays].sort()
-      try {
-        await getResend().emails.send({
-          from: FROM_EMAIL,
-          to: profile.email,
-          subject: `⏳ Waitlisted — Week of ${format(new Date(sortedDays[0]), 'MMM d')}`,
-          html: noSpotsHtml(profile.full_name ?? 'Team Member', sortedDays),
-        })
-      } catch (err) {
-        console.error(`Failed to send waitlist email to ${profile.email}:`, err)
-      }
+    const assignments = allocs
+      .map((a) => ({
+        date: a.date,
+        spotLabel: spotMap.get(a.spot_id)?.label ?? '?',
+      }))
+      .sort((a, b) => a.date.localeCompare(b.date))
+
+    const sortedWaitDays = [...waitDays].sort()
+
+    const firstDate = assignments[0]?.date ?? sortedWaitDays[0]
+    const subject = assignments.length > 0
+      ? `🅿️ Parking for Next Week — ${format(new Date(firstDate), 'MMM d')}`
+      : `⏳ Waitlisted — Week of ${format(new Date(firstDate), 'MMM d')}`
+
+    try {
+      await getResend().emails.send({
+        from: FROM_EMAIL,
+        to: profile.email,
+        subject,
+        html: weeklyAllocationHtml(
+          profile.full_name ?? 'Team Member',
+          assignments,
+          sortedWaitDays
+        ),
+      })
+    } catch (err) {
+      console.error(`Failed to send allocation email to ${profile.email}:`, err)
     }
   }
 }
@@ -234,6 +248,6 @@ export async function sendWaitlistPromotionEmail(
     from: FROM_EMAIL,
     to: email,
     subject: `🎉 You Got a Spot! — ${format(new Date(date), 'EEEE, MMM d')}`,
-    html: waitlistUpdateHtml(name, spotLabel, date),
+    html: waitlistPromotionHtml(name, spotLabel, date),
   })
 }

@@ -58,7 +58,6 @@ export default async function DashboardPage() {
             <h1 className="text-2xl font-bold text-slate-900">
               Hey, {profile.full_name?.split(' ')[0]} 👋
             </h1>
-            <p className="text-sm text-slate-500 mt-0.5">Lisbon Office Parking</p>
           </div>
           <SignOutButton />
         </div>

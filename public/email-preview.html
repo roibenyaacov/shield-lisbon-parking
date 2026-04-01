@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Shield Parking — Email Preview</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap');
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:'DM Sans',system-ui,sans-serif; background:#0f0f13; color:#fff; min-height:100vh; }
+  .header { padding:28px 24px 0; text-align:center; }
+  .header h1 { font-size:20px; font-weight:700; letter-spacing:-.3px; }
+  .header p { font-size:13px; color:#888; margin-top:4px; }
+  .tabs { display:flex; gap:6px; padding:20px 20px 0; position:sticky; top:0; background:#0f0f13; z-index:10; justify-content:center; }
+  .tab { padding:12px 24px; border-radius:12px; font-size:13px; font-weight:600; cursor:pointer; border:none; transition:all .2s; }
+  .tab.active { background:#2563EB; color:#fff; }
+  .tab:not(.active) { background:#1e1e28; color:#888; }
+  .tab:hover:not(.active) { color:#bbb; background:#252530; }
+  .preview-wrap { max-width:520px; margin:20px auto; padding:0 20px; }
+  .subject-bar { background:#1e1e28; border-radius:14px; padding:16px 20px; margin-bottom:16px; }
+  .subject-bar .from { font-size:11px; color:#666; margin-bottom:4px; }
+  .subject-bar .subj { font-size:14px; font-weight:600; color:#e0e0e0; }
+  .scenario { display:inline-block; background:#2563EB22; color:#818cf8; font-size:10px; font-weight:700; padding:4px 10px; border-radius:6px; margin-bottom:12px; letter-spacing:.5px; text-transform:uppercase; }
+  .email-frame { border-radius:16px; overflow:hidden; background:#F2F2F7; }
+  .email-frame iframe { width:100%; border:none; min-height:600px; border-radius:16px; display:block; }
+  .hidden { display:none; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Shield Parking — Email Templates</h1>
+  <p>Preview of notification emails</p>
+</div>
+
+<div class="tabs">
+  <button class="tab active" onclick="show(0)">Weekly Allocation</button>
+  <button class="tab" onclick="show(1)">Spot Opened Up</button>
+</div>
+
+<div id="p0" class="preview-wrap panel">
+  <span class="scenario">Friday email: Spots confirmed + waitlisted days</span>
+  <div class="subject-bar">
+    <div class="from">From: Shield Parking &lt;parking@shield-parking.com&gt;</div>
+    <div class="subj">🅿️ Parking for Next Week — Mar 23</div>
+  </div>
+  <div class="email-frame"><iframe id="f0"></iframe></div>
+</div>
+
+<div id="p1" class="preview-wrap panel hidden">
+  <span class="scenario">Triggered when someone releases a spot</span>
+  <div class="subject-bar">
+    <div class="from">From: Shield Parking &lt;parking@shield-parking.com&gt;</div>
+    <div class="subj">🎉 You Got a Spot! — Monday, Mar 23</div>
+  </div>
+  <div class="email-frame"><iframe id="f1"></iframe></div>
+</div>
+
+<script>
+const LOGO = '/logo.png';
+
+function wrap(c) {
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;background:#F2F2F7;font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#F2F2F7;padding:40px 20px;"><tr><td align="center">
+<table width="100%" cellpadding="0" cellspacing="0" style="max-width:440px;background:#FFF;border-radius:24px;overflow:hidden;box-shadow:0 10px 15px -3px rgba(0,0,0,.1);">
+<tr><td style="padding:32px 32px 16px;text-align:center;"><img src="${LOGO}" alt="Shield" width="140" style="display:inline-block;height:auto;"/></td></tr>
+<tr><td style="padding:16px 32px 32px;">${c}</td></tr>
+<tr><td style="padding:0 32px 24px;text-align:center;border-top:1px solid #F2F2F7;"><p style="margin:16px 0 0;color:#C7C7CC;font-size:11px;">Shield · Lisbon, Portugal</p></td></tr>
+</table></td></tr></table></body></html>`;
+}
+
+const emails = [
+  // 0: Weekly allocation (spots + waitlist)
+  wrap(`
+    <h2 style="margin:0 0 24px;color:#1a1a1a;font-size:22px;font-weight:700;text-align:center;">Your Parking for Next Week</h2>
+    <p style="margin:0 0 20px;color:#3C3C43;font-size:15px;">Hi Daniel,</p>
+    <p style="margin:0 0 16px;color:#8E8E93;font-size:14px;line-height:1.5;">Here are your parking allocations:</p>
+    <div style="background:#F0F0FF;border:2px solid #D4D4FF;border-radius:16px;overflow:hidden;margin:0 0 20px;">
+      <table style="width:100%;border-collapse:collapse;">
+        <thead><tr><th style="padding:12px 16px;text-align:left;font-size:11px;color:#6366F1;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">Day</th><th style="padding:12px 16px;text-align:right;font-size:11px;color:#6366F1;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">Your Spot</th></tr></thead>
+        <tbody style="background:#FFF;">
+          <tr><td style="padding:14px 16px;border-bottom:1px solid #F0F0F5;font-size:14px;color:#1a1a1a;">Monday, Mar 23</td><td style="padding:14px 16px;border-bottom:1px solid #F0F0F5;text-align:right;"><span style="display:inline-block;background:#2563EB;color:#FFF;font-size:13px;font-weight:700;padding:6px 14px;border-radius:20px;">37</span></td></tr>
+          <tr><td style="padding:14px 16px;border-bottom:1px solid #F0F0F5;font-size:14px;color:#1a1a1a;">Wednesday, Mar 25</td><td style="padding:14px 16px;border-bottom:1px solid #F0F0F5;text-align:right;"><span style="display:inline-block;background:#2563EB;color:#FFF;font-size:13px;font-weight:700;padding:6px 14px;border-radius:20px;">42</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p style="margin:0 0 12px;color:#8E8E93;font-size:14px;line-height:1.5;">You're on the waitlist for these days:</p>
+    <div style="background:#FFF7ED;border:2px solid #FED7AA;border-radius:16px;overflow:hidden;margin:0 0 20px;">
+      <table style="width:100%;border-collapse:collapse;">
+        <thead><tr><th style="padding:12px 16px;text-align:left;font-size:11px;color:#C2410C;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">Day</th><th style="padding:12px 16px;text-align:right;font-size:11px;color:#C2410C;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">Status</th></tr></thead>
+        <tbody style="background:#FFF;">
+          <tr><td style="padding:14px 16px;border-bottom:1px solid #F0F0F5;font-size:14px;color:#1a1a1a;">Tuesday, Mar 24</td><td style="padding:14px 16px;border-bottom:1px solid #F0F0F5;text-align:right;"><span style="display:inline-block;background:#FFF7ED;border:1px solid #FED7AA;color:#C2410C;font-size:13px;font-weight:600;padding:6px 14px;border-radius:20px;">Waitlist</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div style="background:#F0F0FF;border:2px solid #D4D4FF;border-radius:16px;padding:16px 20px;margin:0 0 20px;"><p style="margin:0;color:#3C3C43;font-size:13px;line-height:1.6;text-align:center;">If someone releases their spot, you'll be <strong>automatically assigned</strong> and notified by email.</p></div>
+    <a href="#" style="display:block;background:#2563EB;color:#FFF;text-decoration:none;text-align:center;padding:14px 24px;border-radius:14px;font-size:15px;font-weight:600;margin:0 0 20px;">View in App</a>
+    <p style="margin:0;color:#AEAEB2;font-size:12px;text-align:center;line-height:1.5;">Can't make it? Release your spot in the app so someone else can use it.</p>
+  `),
+  // 1: Spot opened up (waitlist promotion)
+  wrap(`
+    <h2 style="margin:0 0 4px;color:#1a1a1a;font-size:22px;font-weight:700;text-align:center;">A Spot Opened Up!</h2>
+    <p style="margin:0 0 24px;color:#8E8E93;font-size:14px;text-align:center;">You've been moved from the waitlist</p>
+    <p style="margin:0 0 20px;color:#3C3C43;font-size:15px;">Hi Michael,</p>
+    <p style="margin:0 0 20px;color:#8E8E93;font-size:14px;line-height:1.5;">Someone released their parking spot and it's now yours:</p>
+    <div style="background:#F0F0FF;border:2px solid #D4D4FF;border-radius:16px;padding:24px;text-align:center;margin:0 0 8px;">
+      <p style="margin:0 0 6px;color:#6366F1;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;">Your Spot</p>
+      <p style="margin:0;font-size:36px;font-weight:700;color:#1a1a1a;letter-spacing:2px;">37</p>
+    </div>
+    <p style="margin:0 0 24px;color:#8E8E93;font-size:14px;text-align:center;">Monday, March 23, 2026</p>
+    <a href="#" style="display:block;background:#2563EB;color:#FFF;text-decoration:none;text-align:center;padding:14px 24px;border-radius:14px;font-size:15px;font-weight:600;margin:0 0 20px;">View in App</a>
+    <p style="margin:0;color:#AEAEB2;font-size:12px;text-align:center;line-height:1.5;">This was assigned automatically from the waitlist. Enjoy your parking!</p>
+  `)
+];
+
+function loadIframe(id, html) {
+  const f = document.getElementById(id);
+  const doc = f.contentDocument || f.contentWindow.document;
+  doc.open(); doc.write(html); doc.close();
+  setTimeout(() => { f.style.height = (f.contentDocument.body.scrollHeight + 40) + 'px'; }, 200);
+}
+
+emails.forEach((html, i) => loadIframe('f'+i, html));
+
+function show(idx) {
+  document.querySelectorAll('.panel').forEach((p,i) => p.classList.toggle('hidden', i !== idx));
+  document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', i === idx));
+}
+</script>
+</body>
+</html>

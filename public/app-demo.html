@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+<title>Shield Parking — App Demo</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body { font-family:'Inter',system-ui,sans-serif; background:linear-gradient(135deg,#f8fafc 0%,#eff6ff 30%,#fff7ed10 100%); min-height:100vh; }
+  .phone { max-width:430px; margin:0 auto; min-height:100vh; padding:20px 16px 40px; }
+
+  .header { display:flex; align-items:center; justify-content:space-between; margin-bottom:20px; }
+  .header h1 { font-size:24px; font-weight:800; color:#0f172a; }
+  .signout { font-size:12px; font-weight:600; color:#94a3b8; background:#f1f5f9; border:none; padding:8px 14px; border-radius:10px; cursor:pointer; }
+
+  .card { background:#fff; border-radius:24px; box-shadow:0 1px 3px rgba(0,0,0,.06),0 4px 12px rgba(0,0,0,.04); overflow:hidden; margin-bottom:16px; }
+
+  .hero-top { background:linear-gradient(135deg,#1e293b,#0f172a); padding:20px 24px; text-align:center; border-radius:24px 24px 0 0; }
+  .hero-top .label { color:#94a3b8; font-size:14px; }
+  .hero-top .date { color:#fff; font-size:22px; font-weight:700; margin-top:4px; }
+  .hero-body { padding:28px 24px; text-align:center; }
+  .hero-check { width:64px; height:64px; border-radius:50%; border:4px solid #2563eb; display:flex; align-items:center; justify-content:center; margin:0 auto 12px; }
+  .hero-check svg { width:32px; height:32px; color:#2563eb; }
+  .hero-body .spot-label { color:#94a3b8; font-size:14px; }
+  .hero-body .spot-num { font-size:48px; font-weight:800; color:#0f172a; margin-top:4px; }
+  .ev-badge { display:inline-flex; align-items:center; gap:4px; color:#16a34a; font-size:13px; font-weight:500; margin-top:8px; }
+
+  .week-card { padding:20px; }
+  .week-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; }
+  .week-header .nav { width:32px; height:32px; border-radius:8px; border:none; background:none; cursor:pointer; display:flex; align-items:center; justify-content:center; }
+  .week-header .nav:disabled { opacity:.2; }
+  .week-header .center { text-align:center; }
+  .week-header .center h3 { font-size:14px; font-weight:700; color:#0f172a; }
+  .week-header .center p { font-size:11px; color:#94a3b8; }
+
+  .day-row { display:flex; align-items:center; justify-content:space-between; padding:12px 14px; border-radius:14px; margin-bottom:6px; cursor:pointer; transition:all .15s; }
+  .day-row:hover { background:#f8fafc; }
+  .day-row.expanded { background:#eff6ff; box-shadow:0 0 0 2px rgba(37,99,235,.15); }
+  .day-row.today { box-shadow:0 0 0 2px rgba(37,99,235,.25); }
+  .day-row.past { opacity:.35; pointer-events:none; }
+  .day-left { display:flex; align-items:center; gap:12px; }
+  .day-badge { width:36px; height:36px; border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; color:#fff; }
+  .day-badge.green { background:#22c55e; }
+  .day-badge.amber { background:#f59e0b; }
+  .day-badge.gray { background:#f1f5f9; color:#94a3b8; }
+  .day-info .name { font-size:14px; font-weight:600; color:#0f172a; display:flex; align-items:center; gap:6px; }
+  .day-info .sub { font-size:11px; color:#94a3b8; }
+  .today-tag { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; color:#2563eb; background:#dbeafe; padding:2px 6px; border-radius:4px; }
+  .day-right { display:flex; align-items:center; gap:8px; }
+  .day-status { font-size:12px; font-weight:600; }
+  .day-status.green { color:#15803d; }
+  .day-status.amber { color:#d97706; }
+  .day-status.gray { color:#94a3b8; }
+  .chevron { width:16px; height:16px; color:#cbd5e1; transition:transform .2s; }
+  .chevron.open { transform:rotate(180deg); }
+
+  .grid-wrap { padding:8px 8px 12px; }
+  .grid-legend { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
+  .grid-legend .title { font-size:12px; font-weight:600; color:#64748b; }
+  .grid-legend .dots { display:flex; gap:12px; }
+  .grid-legend .dot { display:flex; align-items:center; gap:4px; font-size:10px; font-weight:500; }
+  .grid-legend .dot span { width:8px; height:8px; border-radius:50%; display:inline-block; }
+  .grid { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; }
+  .spot { border-radius:14px; border:2px solid; padding:10px 4px; text-align:center; transition:all .15s; cursor:default; }
+  .spot.mine { border-color:#3b82f6; background:#eff6ff; box-shadow:0 4px 12px rgba(37,99,235,.1); cursor:pointer; }
+  .spot.avail { border-color:#86efac; background:#f0fdf4; cursor:pointer; }
+  .spot.taken { border-color:#fca5a5; background:#fef2f2; }
+  .spot .num { font-size:18px; font-weight:700; }
+  .spot.mine .num { color:#2563eb; }
+  .spot.avail .num { color:#16a34a; }
+  .spot.taken .num { color:#ef4444; }
+  .spot .who { font-size:10px; font-weight:500; margin-top:2px; }
+  .spot.mine .who { color:#3b82f6; }
+  .spot.avail .who { color:#22c55e; }
+  .spot.taken .who { color:#f87171; }
+  .spot .icon { font-size:10px; margin-top:2px; }
+
+  .form-card { padding:20px; }
+  .form-header { display:flex; align-items:center; gap:12px; margin-bottom:20px; }
+  .form-icon { width:40px; height:40px; border-radius:12px; background:#2563eb; display:flex; align-items:center; justify-content:center; }
+  .form-header .title { font-weight:700; color:#0f172a; }
+  .form-header .sub { font-size:12px; color:#64748b; }
+
+  .form-day { display:flex; align-items:center; justify-content:space-between; padding:14px 16px; border-radius:16px; border:2px solid #e2e8f0; margin-bottom:8px; cursor:pointer; transition:all .15s; }
+  .form-day.selected { border-color:#2563eb; background:#eff6ff; box-shadow:0 4px 12px rgba(37,99,235,.1); }
+  .form-day .left .dayname { font-weight:600; color:#0f172a; display:flex; align-items:center; gap:8px; }
+  .form-day .left .prio { font-size:11px; color:#94a3b8; margin-top:2px; }
+  .team-tag { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.3px; background:#2563eb; color:#fff; padding:2px 8px; border-radius:99px; }
+  .check-circle { width:28px; height:28px; border-radius:50%; border:2px solid #cbd5e1; display:flex; align-items:center; justify-content:center; transition:all .15s; }
+  .check-circle.on { border-color:#2563eb; background:#2563eb; transform:scale(1.1); }
+
+  .submit-btn { width:100%; padding:16px; border-radius:16px; border:none; background:#2563eb; color:#fff; font-size:16px; font-weight:600; cursor:pointer; margin-top:12px; }
+
+  .hidden { display:none; }
+  .fade-in { animation:fadeIn .3s ease; }
+  @keyframes fadeIn { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
+
+  .modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:50; display:flex; align-items:flex-end; justify-content:center; padding:0 16px 32px; }
+  .modal { background:#fff; border-radius:20px; width:100%; max-width:380px; overflow:hidden; animation:slideUp .3s ease; }
+  @keyframes slideUp { from{opacity:0;transform:translateY(60px)} to{opacity:1;transform:translateY(0)} }
+  .modal-body { padding:24px; text-align:center; }
+  .modal-circle { width:56px; height:56px; border-radius:50%; margin:0 auto 16px; display:flex; align-items:center; justify-content:center; }
+  .modal-circle.green { background:#dcfce7; }
+  .modal-circle.red { background:#fee2e2; }
+  .modal-circle .num { font-size:20px; font-weight:700; }
+  .modal-circle.green .num { color:#16a34a; }
+  .modal-circle.red .num { color:#dc2626; }
+  .modal h3 { font-size:18px; font-weight:700; color:#0f172a; margin-bottom:4px; }
+  .modal .date { font-size:14px; color:#94a3b8; }
+  .modal-actions { display:flex; border-top:1px solid #f1f5f9; }
+  .modal-actions button { flex:1; padding:14px; border:none; background:none; font-size:14px; font-weight:600; cursor:pointer; }
+  .modal-actions .cancel { color:#64748b; }
+  .modal-actions .confirm-green { color:#16a34a; border-left:1px solid #f1f5f9; }
+  .modal-actions .confirm-red { color:#dc2626; border-left:1px solid #f1f5f9; }
+
+  .tabs-bar { display:flex; gap:4px; background:#f1f5f9; border-radius:14px; padding:4px; margin-bottom:20px; position:sticky; top:0; z-index:5; }
+  .tabs-bar button { flex:1; padding:10px; border:none; border-radius:10px; font-size:12px; font-weight:600; cursor:pointer; transition:all .15s; background:none; color:#64748b; }
+  .tabs-bar button.active { background:#fff; color:#0f172a; box-shadow:0 1px 3px rgba(0,0,0,.08); }
+</style>
+</head>
+<body>
+
+<div class="phone">
+  <!-- Tabs to switch views -->
+  <div class="tabs-bar">
+    <button class="active" onclick="showView('week')">This Week</button>
+    <button onclick="showView('register')">Register Next Week</button>
+  </div>
+
+  <!-- ===== THIS WEEK VIEW ===== -->
+  <div id="view-week">
+    <div class="header">
+      <h1>Hey, Daniel 👋</h1>
+      <button class="signout">Sign Out</button>
+    </div>
+
+    <!-- Hero Card -->
+    <div class="card">
+      <div class="hero-top">
+        <div class="label">Parking for Today</div>
+        <div class="date">Apr 1, 2026</div>
+      </div>
+      <div class="hero-body">
+        <div class="hero-check">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+        </div>
+        <div class="spot-label">Your Parking Spot</div>
+        <div class="spot-num">37</div>
+        <div class="ev-badge">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+          EV Charging
+        </div>
+      </div>
+    </div>
+
+    <!-- Week Card -->
+    <div class="card">
+      <div class="week-card">
+        <div class="week-header">
+          <button class="nav" disabled>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+          </button>
+          <div class="center">
+            <h3>This Week</h3>
+            <p>Mar 30 – Apr 3</p>
+          </div>
+          <button class="nav" onclick="alert('Next week view')">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+          </button>
+        </div>
+
+        <div id="days-list">
+          <!-- Monday - past -->
+          <div class="day-row past" onclick="toggleDay(this,'mon')">
+            <div class="day-left">
+              <div class="day-badge green">37</div>
+              <div class="day-info">
+                <div class="name">Monday</div>
+                <div class="sub">Mar 30</div>
+              </div>
+            </div>
+            <div class="day-right">
+              <span class="day-status green">37</span>
+              <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+            </div>
+          </div>
+
+          <!-- Tuesday - today -->
+          <div class="day-row today" onclick="toggleDay(this,'tue')" id="row-tue">
+            <div class="day-left">
+              <div class="day-badge green">37</div>
+              <div class="day-info">
+                <div class="name">Tuesday <span class="today-tag">Today</span></div>
+                <div class="sub">Apr 1</div>
+              </div>
+            </div>
+            <div class="day-right">
+              <span class="day-status green">37</span>
+              <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+            </div>
+          </div>
+          <div id="grid-tue" class="hidden"></div>
+
+          <!-- Wednesday - spot -->
+          <div class="day-row" onclick="toggleDay(this,'wed')" id="row-wed">
+            <div class="day-left">
+              <div class="day-badge green">42</div>
+              <div class="day-info">
+                <div class="name">Wednesday</div>
+                <div class="sub">Apr 2</div>
+              </div>
+            </div>
+            <div class="day-right">
+              <span class="day-status green">42</span>
+              <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+            </div>
+          </div>
+          <div id="grid-wed" class="hidden"></div>
+
+          <!-- Thursday - waitlist -->
+          <div class="day-row" onclick="toggleDay(this,'thu')" id="row-thu">
+            <div class="day-left">
+              <div class="day-badge amber">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+              </div>
+              <div class="day-info">
+                <div class="name">Thursday</div>
+                <div class="sub">Apr 3</div>
+              </div>
+            </div>
+            <div class="day-right">
+              <span class="day-status amber">Waitlist</span>
+              <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+            </div>
+          </div>
+          <div id="grid-thu" class="hidden"></div>
+
+          <!-- Friday - no spot -->
+          <div class="day-row" onclick="toggleDay(this,'fri')" id="row-fri">
+            <div class="day-left">
+              <div class="day-badge gray">–</div>
+              <div class="day-info">
+                <div class="name">Friday</div>
+                <div class="sub">Apr 4</div>
+              </div>
+            </div>
+            <div class="day-right">
+              <span class="day-status gray">No spot</span>
+              <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+            </div>
+          </div>
+          <div id="grid-fri" class="hidden"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== REGISTER VIEW ===== -->
+  <div id="view-register" class="hidden">
+    <div class="header">
+      <h1>Hey, Daniel 👋</h1>
+      <button class="signout">Sign Out</button>
+    </div>
+
+    <div class="card">
+      <div class="form-card">
+        <div class="form-header">
+          <div class="form-icon">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+          </div>
+          <div>
+            <div class="title">Week of Apr 6, 2026</div>
+            <div class="sub">Select the days you need parking (max 3)</div>
+          </div>
+        </div>
+
+        <div class="form-day selected" onclick="toggleFormDay(this)">
+          <div class="left">
+            <div class="dayname">Monday <span class="team-tag">Your Team Day</span></div>
+            <div class="prio">Priority: CS, CloudOps</div>
+          </div>
+          <div class="check-circle on">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+          </div>
+        </div>
+
+        <div class="form-day" onclick="toggleFormDay(this)">
+          <div class="left">
+            <div class="dayname">Tuesday</div>
+            <div class="prio">Priority: PM, SM</div>
+          </div>
+          <div class="check-circle"></div>
+        </div>
+
+        <div class="form-day selected" onclick="toggleFormDay(this)">
+          <div class="left">
+            <div class="dayname">Wednesday</div>
+            <div class="prio">Priority: Marketing, Data Sources</div>
+          </div>
+          <div class="check-circle on">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+          </div>
+        </div>
+
+        <div class="form-day selected" onclick="toggleFormDay(this)">
+          <div class="left">
+            <div class="dayname">Thursday</div>
+            <div class="prio">Priority: DevOps, App Team</div>
+          </div>
+          <div class="check-circle on">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+          </div>
+        </div>
+
+        <div class="form-day" onclick="toggleFormDay(this)">
+          <div class="left">
+            <div class="dayname">Friday</div>
+            <div class="prio">Priority: All Teams</div>
+          </div>
+          <div class="check-circle"></div>
+        </div>
+
+        <button class="submit-btn" onclick="submitForm()">Submit Request (3/3 days)</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal -->
+<div id="modal" class="modal-overlay" style="display:none" onclick="closeModal()">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-body">
+      <div id="modal-circle" class="modal-circle green"><span class="num" id="modal-num">42</span></div>
+      <h3 id="modal-title">Claim This Spot?</h3>
+      <p class="date" id="modal-date">Wednesday, Apr 2</p>
+    </div>
+    <div class="modal-actions">
+      <button class="cancel" onclick="closeModal()">Cancel</button>
+      <button id="modal-confirm" class="confirm-green" onclick="closeModal()">Claim</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const spots = [
+  { label:'1', prio:'motorcycle' },
+  { label:'37', prio:'ev' },
+  { label:'38', prio:'ev' },
+  { label:'39', prio:'general', fixed:'Raíssa' },
+  { label:'40', prio:'general' },
+  { label:'41', prio:'general' },
+  { label:'42', prio:'general' },
+  { label:'43', prio:'general' },
+  { label:'44', prio:'general' },
+  { label:'49', prio:'general', fixed:'Rita' },
+];
+
+const dayData = {
+  tue: [
+    { label:'1', who:'Amit', mine:false },
+    { label:'37', who:'You', mine:true },
+    { label:'38', who:'Sarah', mine:false },
+    { label:'39', who:'Raíssa', mine:false },
+    { label:'40', who:'Tomer', mine:false },
+    { label:'41', who:'Noa', mine:false },
+    { label:'42', who:'Yoni', mine:false },
+    { label:'43', who:null },
+    { label:'44', who:'Lior', mine:false },
+    { label:'49', who:'Rita', mine:false },
+  ],
+  wed: [
+    { label:'1', who:null },
+    { label:'37', who:'Gal', mine:false },
+    { label:'38', who:null },
+    { label:'39', who:'Raíssa', mine:false },
+    { label:'40', who:'Roei', mine:false },
+    { label:'41', who:null },
+    { label:'42', who:'You', mine:true },
+    { label:'43', who:'Maya', mine:false },
+    { label:'44', who:'Lior', mine:false },
+    { label:'49', who:'Rita', mine:false },
+  ],
+  thu: [
+    { label:'1', who:'Amit', mine:false },
+    { label:'37', who:'Tomer', mine:false },
+    { label:'38', who:'Sarah', mine:false },
+    { label:'39', who:'Raíssa', mine:false },
+    { label:'40', who:'Gal', mine:false },
+    { label:'41', who:'Noa', mine:false },
+    { label:'42', who:'Roei', mine:false },
+    { label:'43', who:'Maya', mine:false },
+    { label:'44', who:'Yoni', mine:false },
+    { label:'49', who:'Rita', mine:false },
+  ],
+  fri: [
+    { label:'1', who:null },
+    { label:'37', who:'Tomer', mine:false },
+    { label:'38', who:null },
+    { label:'39', who:null },
+    { label:'40', who:'Roei', mine:false },
+    { label:'41', who:null },
+    { label:'42', who:null },
+    { label:'43', who:null },
+    { label:'44', who:'Yoni', mine:false },
+    { label:'49', who:null },
+  ],
+};
+
+const dayDates = { tue:'Wednesday, Apr 1', wed:'Wednesday, Apr 2', thu:'Thursday, Apr 3', fri:'Friday, Apr 4' };
+let openDay = null;
+
+function renderGrid(day) {
+  const data = dayData[day];
+  if (!data) return '';
+  const avail = data.filter(s => !s.who).length;
+  let html = `<div class="grid-wrap fade-in">
+    <div class="grid-legend">
+      <span class="title">All Spots</span>
+      <div class="dots">
+        <span class="dot"><span style="background:#22c55e"></span> Available</span>
+        <span class="dot"><span style="background:#f87171"></span> Occupied</span>
+      </div>
+    </div>
+    <div class="grid">`;
+  data.forEach(s => {
+    const cls = s.mine ? 'mine' : s.who ? 'taken' : 'avail';
+    const click = (s.mine || !s.who) ? `onclick="spotClick('${s.label}','${day}','${cls}')"` : '';
+    const icon = spots.find(sp=>sp.label===s.label);
+    let iconHtml = '';
+    if (icon?.prio === 'ev') iconHtml = '<div class="icon">⚡</div>';
+    if (icon?.prio === 'motorcycle') iconHtml = '<div class="icon">🏍</div>';
+    html += `<div class="spot ${cls}" ${click}>
+      <div class="num">${s.label}</div>
+      <div class="who">${s.mine ? 'You' : s.who ?? 'Available'}</div>
+      ${iconHtml}
+    </div>`;
+  });
+  html += '</div></div>';
+  return html;
+}
+
+function toggleDay(row, day) {
+  if (openDay === day) {
+    document.getElementById('grid-'+day).classList.add('hidden');
+    document.getElementById('grid-'+day).innerHTML = '';
+    row.classList.remove('expanded');
+    row.querySelector('.chevron').classList.remove('open');
+    openDay = null;
+    return;
+  }
+  if (openDay) {
+    const prev = document.getElementById('grid-'+openDay);
+    prev.classList.add('hidden');
+    prev.innerHTML = '';
+    document.getElementById('row-'+openDay)?.classList.remove('expanded');
+    document.getElementById('row-'+openDay)?.querySelector('.chevron')?.classList.remove('open');
+  }
+  openDay = day;
+  row.classList.add('expanded');
+  row.querySelector('.chevron').classList.add('open');
+  const grid = document.getElementById('grid-'+day);
+  grid.innerHTML = renderGrid(day);
+  grid.classList.remove('hidden');
+}
+
+function spotClick(label, day, type) {
+  const modal = document.getElementById('modal');
+  const circle = document.getElementById('modal-circle');
+  const num = document.getElementById('modal-num');
+  const title = document.getElementById('modal-title');
+  const date = document.getElementById('modal-date');
+  const confirm = document.getElementById('modal-confirm');
+
+  num.textContent = label;
+  date.textContent = dayDates[day] || day;
+
+  if (type === 'mine') {
+    circle.className = 'modal-circle red';
+    num.className = 'num';
+    title.textContent = 'Release This Spot?';
+    confirm.className = 'confirm-red';
+    confirm.textContent = 'Release';
+  } else {
+    circle.className = 'modal-circle green';
+    num.className = 'num';
+    title.textContent = 'Claim This Spot?';
+    confirm.className = 'confirm-green';
+    confirm.textContent = 'Claim';
+  }
+  modal.style.display = 'flex';
+}
+
+function closeModal() {
+  document.getElementById('modal').style.display = 'none';
+}
+
+function showView(view) {
+  document.getElementById('view-week').classList.toggle('hidden', view !== 'week');
+  document.getElementById('view-register').classList.toggle('hidden', view !== 'register');
+  document.querySelectorAll('.tabs-bar button').forEach((b,i) => {
+    b.classList.toggle('active', (i===0 && view==='week') || (i===1 && view==='register'));
+  });
+}
+
+function toggleFormDay(el) {
+  el.classList.toggle('selected');
+  const circle = el.querySelector('.check-circle');
+  circle.classList.toggle('on');
+  if (circle.classList.contains('on')) {
+    circle.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>';
+  } else {
+    circle.innerHTML = '';
+  }
+  const count = document.querySelectorAll('.form-day.selected').length;
+  document.querySelector('.submit-btn').textContent = `Submit Request (${count}/3 days)`;
+}
+
+function submitForm() {
+  alert('Request submitted! Allocations will be announced Friday morning.');
+}
+</script>
+</body>
+</html>

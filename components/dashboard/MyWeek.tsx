@@ -3,10 +3,11 @@
 import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Card } from '@/components/ui/Card'
-import { Check, Clock, ChevronRight, ChevronLeft, ChevronDown, X, Zap, Bike, MapPin } from 'lucide-react'
+import { Check, Clock, ChevronRight, ChevronLeft, ChevronDown, Zap, Bike, LogOut, PlusCircle } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { format, addDays, startOfWeek, addWeeks, isBefore, startOfDay, isToday } from 'date-fns'
-import { DAY_LABELS, DAY_NAMES, SPOT_LABELS } from '@/lib/constants'
+import { DAY_LABELS, DAY_NAMES } from '@/lib/constants'
+import toast from 'react-hot-toast'
 import type { ParkingSpot, Profile, WeeklyAllocation } from '@/types/db'
 
 interface MyWeekProps {
@@ -42,6 +43,8 @@ export function MyWeek({ userId }: MyWeekProps) {
   const [daySpots, setDaySpots] = useState<SpotInfo[]>([])
   const [spotsLoading, setSpotsLoading] = useState(false)
   const [direction, setDirection] = useState(0)
+  const [actionLoading, setActionLoading] = useState<number | null>(null)
+  const [confirmAction, setConfirmAction] = useState<{ spotId: number; date: string; type: 'release' | 'claim' } | null>(null)
   const supabase = createClient()
 
   const loadWeek = useCallback(async (offset: number) => {
@@ -96,11 +99,14 @@ export function MyWeek({ userId }: MyWeekProps) {
   useEffect(() => {
     const channel = supabase
       .channel('my-week-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'weekly_allocations' }, () => loadWeek(weekOffset))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'weekly_allocations' }, () => {
+        loadWeek(weekOffset)
+        if (expandedDay) loadDaySpots(expandedDay)
+      })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'waitlist' }, () => loadWeek(weekOffset))
       .subscribe()
     return () => { supabase.removeChannel(channel) }
-  }, [supabase, loadWeek, weekOffset])
+  }, [supabase, loadWeek, weekOffset, expandedDay])
 
   const loadDaySpots = async (date: string) => {
     setSpotsLoading(true)
@@ -137,6 +143,65 @@ export function MyWeek({ userId }: MyWeekProps) {
     }
   }
 
+  const handleSpotClick = (spot: SpotInfo, date: string) => {
+    const day = days.find(d => d.date === date)
+    if (!day || day.isPast) return
+
+    if (spot.isCurrentUser) {
+      setConfirmAction({ spotId: spot.id, date, type: 'release' })
+    } else if (spot.isAvailable) {
+      const userHasSpotToday = days.find(d => d.date === date)?.spotId
+      if (userHasSpotToday) {
+        toast.error('You already have a spot for this day')
+        return
+      }
+      setConfirmAction({ spotId: spot.id, date, type: 'claim' })
+    }
+  }
+
+  const executeAction = async () => {
+    if (!confirmAction) return
+    setActionLoading(confirmAction.spotId)
+
+    try {
+      if (confirmAction.type === 'release') {
+        const res = await fetch('/api/release', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            date: confirmAction.date,
+            spot_id: confirmAction.spotId,
+            user_id: userId,
+            action: 'release',
+          }),
+        })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error)
+        toast.success('Spot released')
+      } else {
+        const res = await fetch('/api/claim', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            date: confirmAction.date,
+            spot_id: confirmAction.spotId,
+          }),
+        })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error)
+        toast.success('Spot claimed!')
+      }
+
+      await loadWeek(weekOffset)
+      if (expandedDay) await loadDaySpots(expandedDay)
+    } catch (err: any) {
+      toast.error(err.message ?? 'Action failed')
+    } finally {
+      setActionLoading(null)
+      setConfirmAction(null)
+    }
+  }
+
   const goToWeek = (dir: number) => {
     if (navigator.vibrate) navigator.vibrate(10)
     setDirection(dir)
@@ -151,7 +216,7 @@ export function MyWeek({ userId }: MyWeekProps) {
 
   return (
     <div className="space-y-4">
-      {/* Hero card - today's / next parking */}
+      {/* Hero card */}
       {!loading && activeDay?.spotLabel && (
         <motion.div
           initial={{ opacity: 0, scale: 0.95 }}
@@ -275,7 +340,7 @@ export function MyWeek({ userId }: MyWeekProps) {
                       </div>
                       <div className="flex items-center gap-2">
                         {day.spotLabel ? (
-                          <span className="text-xs font-semibold text-green-700">Spot #{day.spotLabel}</span>
+                          <span className="text-xs font-semibold text-green-700">{day.spotLabel}</span>
                         ) : day.waitlisted ? (
                           <span className="text-xs font-semibold text-amber-600">Waitlist</span>
                         ) : (
@@ -301,12 +366,17 @@ export function MyWeek({ userId }: MyWeekProps) {
                           className="overflow-hidden"
                         >
                           <div className="px-2 pt-2 pb-3">
-                            <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center justify-between mb-2">
                               <p className="text-xs font-semibold text-slate-500">All Spots</p>
                               {!spotsLoading && (
-                                <span className="text-[11px] font-medium text-green-600">
-                                  {daySpots.filter(s => s.isAvailable).length} available
-                                </span>
+                                <div className="flex items-center gap-3">
+                                  <span className="flex items-center gap-1 text-[10px] font-medium text-green-600">
+                                    <span className="w-2 h-2 rounded-full bg-green-500" /> Available
+                                  </span>
+                                  <span className="flex items-center gap-1 text-[10px] font-medium text-red-500">
+                                    <span className="w-2 h-2 rounded-full bg-red-400" /> Occupied
+                                  </span>
+                                </div>
                               )}
                             </div>
                             {spotsLoading ? (
@@ -317,40 +387,54 @@ export function MyWeek({ userId }: MyWeekProps) {
                               </div>
                             ) : (
                               <div className="grid grid-cols-4 gap-2">
-                                {daySpots.map((spot) => (
-                                  <motion.div
-                                    key={spot.id}
-                                    initial={{ opacity: 0, scale: 0.9 }}
-                                    animate={{ opacity: 1, scale: 1 }}
-                                    transition={{ type: 'spring', stiffness: 300, damping: 25 }}
-                                    className={`rounded-xl border-2 p-2.5 text-center transition-all ${
-                                      spot.isCurrentUser
-                                        ? 'border-blue-500 bg-blue-50 shadow-md shadow-blue-600/10'
-                                        : spot.isAvailable
-                                          ? 'border-green-300 bg-green-50'
-                                          : 'border-slate-200 bg-slate-50'
-                                    }`}
-                                  >
-                                    <p className={`text-lg font-bold ${
-                                      spot.isCurrentUser ? 'text-blue-600'
-                                      : spot.isAvailable ? 'text-green-600'
-                                      : 'text-slate-400'
-                                    }`}>{spot.label}</p>
-                                    <p className={`text-[10px] font-medium truncate ${
-                                      spot.isCurrentUser ? 'text-blue-500'
-                                      : spot.isAvailable ? 'text-green-500'
-                                      : 'text-slate-400'
-                                    }`}>
-                                      {spot.isCurrentUser ? 'You' : spot.isAvailable ? 'Available' : spot.occupantName?.split(' ')[0] ?? 'Taken'}
-                                    </p>
-                                    {spot.priority === 'ev' && (
-                                      <Zap className="w-3 h-3 text-green-500 mx-auto mt-0.5" />
-                                    )}
-                                    {spot.priority === 'motorcycle' && (
-                                      <Bike className="w-3 h-3 text-orange-500 mx-auto mt-0.5" />
-                                    )}
-                                  </motion.div>
-                                ))}
+                                {daySpots.map((spot) => {
+                                  const isClickable = !day.isPast && (spot.isCurrentUser || spot.isAvailable)
+                                  const isLoading = actionLoading === spot.id
+
+                                  return (
+                                    <motion.button
+                                      type="button"
+                                      key={spot.id}
+                                      disabled={!isClickable || isLoading}
+                                      onClick={() => isClickable && handleSpotClick(spot, day.date)}
+                                      initial={{ opacity: 0, scale: 0.9 }}
+                                      animate={{ opacity: 1, scale: 1 }}
+                                      whileTap={isClickable ? { scale: 0.92 } : undefined}
+                                      transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+                                      className={`rounded-xl border-2 p-2 text-center transition-all relative ${
+                                        spot.isCurrentUser
+                                          ? 'border-blue-500 bg-blue-50 shadow-md shadow-blue-600/10'
+                                          : spot.isAvailable
+                                            ? 'border-green-400 bg-green-50'
+                                            : 'border-red-300 bg-red-50'
+                                      } ${isClickable && !isLoading ? 'active:scale-95 cursor-pointer' : ''} ${isLoading ? 'opacity-50' : ''}`}
+                                    >
+                                      {isLoading && (
+                                        <div className="absolute inset-0 flex items-center justify-center bg-white/60 rounded-xl">
+                                          <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                                        </div>
+                                      )}
+                                      <p className={`text-lg font-bold ${
+                                        spot.isCurrentUser ? 'text-blue-600'
+                                        : spot.isAvailable ? 'text-green-600'
+                                        : 'text-red-400'
+                                      }`}>{spot.label}</p>
+                                      <p className={`text-[10px] font-medium truncate ${
+                                        spot.isCurrentUser ? 'text-blue-500'
+                                        : spot.isAvailable ? 'text-green-500'
+                                        : 'text-red-400'
+                                      }`}>
+                                        {spot.isCurrentUser ? 'You' : spot.isAvailable ? 'Available' : spot.occupantName?.split(' ')[0] ?? 'Taken'}
+                                      </p>
+                                      {spot.priority === 'ev' && (
+                                        <Zap className="w-3 h-3 text-green-500 mx-auto mt-0.5" />
+                                      )}
+                                      {spot.priority === 'motorcycle' && (
+                                        <Bike className="w-3 h-3 text-orange-500 mx-auto mt-0.5" />
+                                      )}
+                                    </motion.button>
+                                  )
+                                })}
                               </div>
                             )}
                           </div>
@@ -364,6 +448,67 @@ export function MyWeek({ userId }: MyWeekProps) {
           </motion.div>
         </AnimatePresence>
       </Card>
+
+      {/* Confirmation modal */}
+      <AnimatePresence>
+        {confirmAction && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 px-4 pb-8"
+            onClick={() => setConfirmAction(null)}
+          >
+            <motion.div
+              initial={{ opacity: 0, y: 60, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 60, scale: 0.95 }}
+              transition={{ type: 'spring', stiffness: 350, damping: 30 }}
+              className="bg-white rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="p-6 text-center">
+                <div className={`w-14 h-14 mx-auto mb-4 rounded-full flex items-center justify-center ${
+                  confirmAction.type === 'release' ? 'bg-red-100' : 'bg-green-100'
+                }`}>
+                  <span className={`text-xl font-bold ${
+                    confirmAction.type === 'release' ? 'text-red-600' : 'text-green-600'
+                  }`}>
+                    {daySpots.find(s => s.id === confirmAction.spotId)?.label}
+                  </span>
+                </div>
+                <h3 className="text-lg font-bold text-slate-900 mb-1">
+                  {confirmAction.type === 'release' ? 'Release This Spot?' : 'Claim This Spot?'}
+                </h3>
+                <p className="text-sm text-slate-400">
+                  {format(new Date(confirmAction.date + 'T12:00:00'), 'EEEE, MMM d')}
+                </p>
+              </div>
+              <div className="flex border-t border-slate-100">
+                <button
+                  onClick={() => setConfirmAction(null)}
+                  className="flex-1 py-3.5 text-sm font-semibold text-slate-500 active:bg-slate-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={executeAction}
+                  disabled={!!actionLoading}
+                  className={`flex-1 py-3.5 text-sm font-semibold transition-colors border-l border-slate-100 ${
+                    confirmAction.type === 'release'
+                      ? 'text-red-600 active:bg-red-50'
+                      : 'text-green-600 active:bg-green-50'
+                  }`}
+                >
+                  {actionLoading
+                    ? 'Processing...'
+                    : confirmAction.type === 'release' ? 'Release' : 'Claim'}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }
