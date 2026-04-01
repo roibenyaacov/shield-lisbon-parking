@@ -7,7 +7,10 @@ export async function GET(request: Request) {
   const code = searchParams.get('code')
   const token_hash = searchParams.get('token_hash')
   const type = searchParams.get('type')
-  const next = searchParams.get('next') ?? '/dashboard'
+  // Sanitise `next` to prevent open-redirect attacks.
+  // Only allow relative paths that don't start with '//' (protocol-relative URLs).
+  const rawNext = searchParams.get('next') ?? ''
+  const next = rawNext.startsWith('/') && !rawNext.startsWith('//') ? rawNext : '/dashboard'
 
   const cookieStore = await cookies()
   const supabase = createServerClient(

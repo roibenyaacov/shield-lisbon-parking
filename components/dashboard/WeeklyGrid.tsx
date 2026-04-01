@@ -94,11 +94,17 @@ export function WeeklyGrid({
   const handleRelease = async (date: string, spotId: number) => {
     if (navigator.vibrate) navigator.vibrate(10)
     setLoading(true)
-    await fetch('/api/release', {
+    const res = await fetch('/api/release', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ date, spot_id: spotId, user_id: userId }),
+      body: JSON.stringify({ date, spot_id: spotId, user_id: userId, action: 'release' }),
     })
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}))
+      console.error('Release failed:', body.error ?? res.statusText)
+      setLoading(false)
+      return
+    }
     await fetchAllocations(weekStart)
   }
 

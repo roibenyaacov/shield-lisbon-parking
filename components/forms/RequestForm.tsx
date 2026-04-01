@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { DAY_KEYS, DAY_LABELS, DAY_NAMES, LISBON_TIMEZONE, REQUEST_OPEN_DAY, REQUEST_OPEN_HOUR, TEAM_DAY_MAP, TEAM_LABELS } from '@/lib/constants'
@@ -116,7 +115,6 @@ export function RequestForm({ userId, userTeam, existingRequest }: RequestFormPr
   const [error, setError] = useState<string | null>(null)
   const [formState, setFormState] = useState<FormState>(getFormState())
 
-  const supabase = createClient()
   const weekStart = getNextWeekStart()
 
   useEffect(() => {
@@ -152,19 +150,17 @@ export function RequestForm({ userId, userTeam, existingRequest }: RequestFormPr
 
     const weekStartStr = format(weekStart, 'yyyy-MM-dd')
 
-    const { error: upsertError } = await supabase
-      .from('weekly_requests')
-      .upsert(
-        {
-          user_id: userId,
-          week_start: weekStartStr,
-          ...days,
-        } as any,
-        { onConflict: 'user_id,week_start' }
-      )
+    // POST to the server-side route which enforces the time window and
+    // derives the user_id from the session — never from the request body.
+    const res = await fetch('/api/request', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ week_start: weekStartStr, ...days }),
+    })
 
-    if (upsertError) {
-      setError(upsertError.message)
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}))
+      setError(body.error ?? 'Submission failed. Please try again.')
       setLoading(false)
       return
     }

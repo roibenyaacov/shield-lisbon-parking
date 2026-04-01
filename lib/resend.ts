@@ -130,7 +130,7 @@ function weeklyAllocationHtml(
     ${spotsSection}
     ${waitlistSection}
 
-    <a href="https://shield-parking.com/dashboard" style="display:block;background:#2563EB;color:#FFFFFF;text-decoration:none;text-align:center;padding:14px 24px;border-radius:14px;font-size:15px;font-weight:600;margin:0 0 20px;">View in App</a>
+    <a href="${BASE_URL}/dashboard" style="display:block;background:#2563EB;color:#FFFFFF;text-decoration:none;text-align:center;padding:14px 24px;border-radius:14px;font-size:15px;font-weight:600;margin:0 0 20px;">View in App</a>
 
     <p style="margin:0;color:#AEAEB2;font-size:12px;text-align:center;line-height:1.5;">
       Can&rsquo;t make it? Release your spot in the app so someone else can use it.
@@ -156,7 +156,7 @@ function waitlistPromotionHtml(name: string, spotLabel: string, date: string): s
       ${format(new Date(date), 'EEEE, MMMM d, yyyy')}
     </p>
 
-    <a href="https://shield-parking.com/dashboard" style="display:block;background:#2563EB;color:#FFFFFF;text-decoration:none;text-align:center;padding:14px 24px;border-radius:14px;font-size:15px;font-weight:600;margin:0 0 20px;">View in App</a>
+    <a href="${BASE_URL}/dashboard" style="display:block;background:#2563EB;color:#FFFFFF;text-decoration:none;text-align:center;padding:14px 24px;border-radius:14px;font-size:15px;font-weight:600;margin:0 0 20px;">View in App</a>
 
     <p style="margin:0;color:#AEAEB2;font-size:12px;text-align:center;line-height:1.5;">
       This was assigned automatically from the waitlist. Enjoy your parking!
@@ -244,10 +244,14 @@ export async function sendWaitlistPromotionEmail(
   spotLabel: string,
   date: string
 ): Promise<void> {
-  await getResend().emails.send({
-    from: FROM_EMAIL,
-    to: email,
-    subject: `🎉 You Got a Spot! — ${format(new Date(date), 'EEEE, MMM d')}`,
-    html: waitlistPromotionHtml(name, spotLabel, date),
-  })
+  try {
+    await getResend().emails.send({
+      from: FROM_EMAIL,
+      to: email,
+      subject: `🎉 You Got a Spot! — ${format(new Date(date), 'EEEE, MMM d')}`,
+      html: waitlistPromotionHtml(name, spotLabel, date),
+    })
+  } catch (err) {
+    console.error(`Failed to send waitlist promotion email to ${email}:`, err)
+  }
 }
