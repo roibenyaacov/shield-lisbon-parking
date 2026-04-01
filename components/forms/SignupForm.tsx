@@ -332,6 +332,9 @@ export function SignupForm() {
                 {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
             </div>
+            <div className="mt-2 rounded-xl bg-amber-50 border border-amber-200 px-4 py-3">
+              <p className="text-sm text-amber-700 font-medium">Use a password different from your work password.</p>
+            </div>
           </div>
 
           <div className="flex items-center gap-3 pt-1">
