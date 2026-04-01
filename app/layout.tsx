@@ -4,7 +4,7 @@ import './globals.css'
 export const metadata: Metadata = {
   title: 'Shield Lisbon Parking',
   description: 'Weekly parking allocation for the Shield Portugal office',
-  icons: { icon: '/logo.png' },
+  icons: { icon: '/icon.png' },
 }
 
 export const viewport: Viewport = {
