@@ -44,6 +44,7 @@ export type ParkingSpot = {
   priority: SpotPriority
   is_active: boolean
   fixed_user_id: string | null
+  reserved_name: string | null
 }
 
 export type WeeklyRequest = {
@@ -186,12 +187,14 @@ export type Database = {
           priority?: SpotPriority
           is_active?: boolean
           fixed_user_id?: string | null
+          reserved_name?: string | null
         }
         Update: {
           label?: string
           priority?: SpotPriority
           is_active?: boolean
           fixed_user_id?: string | null
+          reserved_name?: string | null
         }
         Relationships: [
           {
