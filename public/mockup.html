@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Shield Parking — Mockup</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:linear-gradient(135deg,#f8fafc,#eff6ff 40%,#fff7ed 100%);min-height:100vh;color:#0f172a}
+
+/* Tab switcher */
+.tab-bar{position:sticky;top:0;z-index:50;background:rgba(255,255,255,.85);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-bottom:1px solid rgba(226,232,240,.5);padding:0 16px}
+.tab-bar-inner{max-width:480px;margin:0 auto;display:flex;gap:0}
+.tab-btn{flex:1;padding:14px 0 12px;text-align:center;font-size:13px;font-weight:600;color:#94a3b8;border:none;background:none;cursor:pointer;border-bottom:2.5px solid transparent;transition:all .2s}
+.tab-btn.active{color:#2563eb;border-bottom-color:#2563eb}
+.tab-btn:hover:not(.active){color:#64748b}
+
+/* Page container */
+.page{display:none;max-width:480px;margin:0 auto;padding:20px 16px 40px}
+.page.active{display:block}
+
+/* Navbar */
+.navbar{text-align:center;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between}
+.navbar img{height:30px}
+.nav-placeholder{width:36px;height:36px}
+.admin-icon{width:36px;height:36px;border-radius:12px;background:#f1f5f9;display:flex;align-items:center;justify-content:center;color:#64748b;text-decoration:none;font-size:14px}
+
+/* Cards */
+.card{background:#fff;border-radius:24px;border:1px solid #e2e8f0;padding:24px;box-shadow:0 1px 3px rgba(0,0,0,.04),0 4px 12px rgba(0,0,0,.03);margin-bottom:16px}
+.card-compact{padding:16px}
+
+/* My Spot page */
+.page-header{display:flex;align-items:center;gap:12px;margin-bottom:20px}
+.back-btn{width:36px;height:36px;border-radius:12px;background:#f1f5f9;display:flex;align-items:center;justify-center;border:none;color:#475569;font-size:16px}
+.page-title{font-size:24px;font-weight:800;color:#0f172a}
+.page-subtitle{font-size:13px;color:#94a3b8}
+
+.spot-header{display:flex;align-items:center;gap:16px}
+.spot-badge{width:64px;height:64px;border-radius:16px;background:#2563eb;display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;font-weight:800;box-shadow:0 8px 20px rgba(37,99,235,.3)}
+.spot-info h2{font-size:18px;font-weight:700}
+.spot-info .fixed-label{display:flex;align-items:center;gap:6px;margin-top:4px;color:#2563eb;font-size:13px;font-weight:600}
+.spot-info .fixed-label svg{width:14px;height:14px}
+
+/* Week nav */
+.week-nav{display:flex;align-items:center;justify-content:space-between;margin-bottom:4px}
+.week-nav button{width:36px;height:36px;border-radius:12px;display:flex;align-items:center;justify-content:center;border:none;background:none;color:#475569;font-size:18px;cursor:pointer}
+.week-nav button:disabled{opacity:.2}
+.week-center{text-align:center}
+.week-center h3{font-weight:700;font-size:15px}
+.week-center p{font-size:11px;color:#94a3b8}
+
+/* Summary pills */
+.pills{display:flex;align-items:center;justify-content:center;gap:8px;margin:12px 0}
+.pill{font-size:11px;font-weight:700;padding:4px 10px;border-radius:999px}
+.pill-green{background:#dcfce7;color:#15803d}
+.pill-grey{background:#f1f5f9;color:#64748b}
+
+.tap-hint{font-size:11px;color:#94a3b8;margin-bottom:12px}
+
+/* Day rows */
+.day-row{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-radius:16px;border:2px solid #e2e8f0;background:#f8fafc;margin-bottom:8px;transition:all .2s;cursor:pointer}
+.day-row:hover{border-color:#cbd5e1}
+.day-row.coming{border-color:#86efac;background:#f0fdf4}
+.day-left{display:flex;align-items:center;gap:12px}
+.day-icon{width:40px;height:40px;border-radius:12px;display:flex;align-items:center;justify-content:center}
+.day-icon.green{background:#22c55e}
+.day-icon.grey{background:#e2e8f0}
+.day-icon svg{width:20px;height:20px}
+.day-name{font-size:13px;font-weight:700}
+.day-date{font-size:11px;color:#94a3b8}
+.day-badge{font-size:11px;font-weight:700;padding:6px 12px;border-radius:999px}
+.day-badge.green{background:#22c55e;color:#fff}
+.day-badge.grey{background:#e2e8f0;color:#64748b}
+
+/* Admin page */
+.admin-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px}
+.admin-header h1{font-size:24px;font-weight:800}
+.admin-header .sub{font-size:13px;color:#94a3b8;margin-top:2px}
+.refresh-btn{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:500;color:#94a3b8;border:none;background:none;cursor:pointer}
+
+/* Stats grid */
+.stats-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px}
+.stat-card{text-align:center}
+.stat-card .num{font-size:28px;font-weight:800}
+.stat-card .num.blue{color:#2563eb}
+.stat-card .num.grey{color:#94a3b8}
+.stat-card .num.amber{color:#f59e0b}
+.stat-card .label{font-size:11px;color:#94a3b8;margin-top:2px}
+
+/* Day section */
+.day-section{margin-bottom:20px}
+.day-section-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.day-section-header .left{display:flex;align-items:center;gap:8px}
+.day-section-header .day-title{font-size:12px;font-weight:700;color:#334155}
+.day-section-header .day-d{font-size:10px;color:#94a3b8}
+.day-section-header .right{display:flex;align-items:center;gap:8px}
+.filled-badge{font-size:10px;font-weight:700;color:#16a34a}
+.waiting-badge{font-size:10px;font-weight:700;color:#d97706;display:flex;align-items:center;gap:3px}
+
+/* Spot grid */
+.spot-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
+.spot-cell{border-radius:12px;padding:8px 4px;text-align:center;border:1px solid}
+.spot-cell.empty{border-color:#f1f5f9;background:#f8fafc}
+.spot-cell.occupied{border-color:#bfdbfe;background:#eff6ff}
+.spot-cell.fixed{border-color:#d8b4fe;background:#faf5ff}
+.spot-cell .s-label{font-size:14px;font-weight:700}
+.spot-cell.empty .s-label{color:#cbd5e1}
+.spot-cell.occupied .s-label{color:#2563eb}
+.spot-cell.fixed .s-label{color:#7c3aed}
+.spot-cell .s-icons{display:flex;align-items:center;justify-content:center;gap:2px;margin-top:2px;height:12px}
+.spot-cell .s-name{font-size:8px;font-weight:600;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.spot-cell.empty .s-name{color:#cbd5e1}
+.spot-cell.occupied .s-name{color:#475569}
+.spot-cell.fixed .s-name{color:#6d28d9}
+.icon-sm{width:10px;height:10px}
+
+/* Waitlist */
+.waitlist-row{display:flex;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap}
+.wl-label{font-size:9px;font-weight:700;color:#d97706;text-transform:uppercase;letter-spacing:.5px}
+.wl-pill{font-size:9px;font-weight:600;background:#fffbeb;color:#b45309;padding:2px 8px;border-radius:999px;border:1px solid #fde68a}
+
+.divider{border:none;border-top:1px solid #f1f5f9;margin:16px 0}
+
+/* Requests table */
+.req-header{display:flex;align-items:center;gap:8px;margin-bottom:12px}
+.req-header h3{font-size:14px;font-weight:700}
+.legend{display:flex;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap}
+.legend-item{display:flex;align-items:center;gap:4px;font-size:9px;font-weight:500;color:#64748b}
+.legend-dot{width:8px;height:8px;border-radius:3px}
+.legend-dot.green{background:#22c55e}
+.legend-dot.amber{background:#f59e0b}
+.legend-dot.grey{background:#e2e8f0}
+
+.req-row{display:flex;align-items:center;gap:12px;margin-bottom:8px}
+.req-name{width:80px;min-width:80px}
+.req-name .rn{font-size:11px;font-weight:700;color:#1e293b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.req-name .rt{font-size:9px;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.req-days{display:flex;gap:4px;flex:1}
+.req-day{width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700}
+.req-day.alloc{background:#22c55e;color:#fff}
+.req-day.wait{background:#f59e0b;color:#fff}
+.req-day.req{background:#e2e8f0;color:#64748b}
+.req-day.none{background:#f8fafc;border:1px solid #f1f5f9;color:#e2e8f0}
+.req-ratio{font-size:10px;min-width:30px;text-align:right}
+.req-ratio .rg{font-weight:700;color:#16a34a}
+.req-ratio .rs{color:#cbd5e1}
+.req-ratio .rt2{color:#94a3b8}
+
+/* Sign out */
+.signout{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:#94a3b8;border:1px solid #e2e8f0;background:#fff;padding:8px 14px;border-radius:12px;cursor:pointer}
+
+/* Logo SVG replacement */
+.logo-text{font-size:22px;font-weight:800;color:#1e293b;letter-spacing:-0.5px}
+.logo-text .dot{color:#f59e0b}
+.logo-text .i-dot{position:relative}
+</style>
+</head>
+<body>
+
+<!-- Tab switcher -->
+<div class="tab-bar">
+  <div class="tab-bar-inner">
+    <button class="tab-btn active" onclick="showPage('myspot')">My Spot (Raíssa)</button>
+    <button class="tab-btn" onclick="showPage('admin')">Admin Dashboard</button>
+  </div>
+</div>
+
+<!-- =============== MY SPOT PAGE =============== -->
+<div class="page active" id="page-myspot">
+
+  <!-- Navbar -->
+  <div class="navbar">
+    <div class="nav-placeholder"></div>
+    <span class="logo-text">sh<span class="i-dot">i</span>eld<span class="dot">.</span></span>
+    <a class="admin-icon" title="Admin">
+      <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+    </a>
+  </div>
+
+  <!-- Header -->
+  <div class="page-header">
+    <button class="back-btn">
+      <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+    </button>
+    <div>
+      <div class="page-title">My Spot</div>
+      <div class="page-subtitle">Manage your fixed parking spot #40</div>
+    </div>
+  </div>
+
+  <!-- Spot card -->
+  <div class="card">
+    <div class="spot-header">
+      <div class="spot-badge">#40</div>
+      <div class="spot-info">
+        <h2>Raíssa's Spot</h2>
+        <div class="fixed-label">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+          Fixed assignment
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Week card -->
+  <div class="card">
+    <div class="week-nav">
+      <button disabled>‹</button>
+      <div class="week-center">
+        <h3>This Week</h3>
+        <p>Apr 7 – Apr 11, 2025</p>
+      </div>
+      <button>›</button>
+    </div>
+
+    <div class="pills">
+      <span class="pill pill-green">4 coming</span>
+      <span class="pill pill-grey">1 off</span>
+    </div>
+
+    <div class="tap-hint">Tap a day to toggle your attendance</div>
+
+    <div class="day-row coming">
+      <div class="day-left">
+        <div class="day-icon green"><svg width="20" height="20" fill="none" stroke="#fff" stroke-width="2.5" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg></div>
+        <div><div class="day-name">Monday</div><div class="day-date">Apr 7</div></div>
+      </div>
+      <span class="day-badge green">Coming</span>
+    </div>
+    <div class="day-row coming">
+      <div class="day-left">
+        <div class="day-icon green"><svg width="20" height="20" fill="none" stroke="#fff" stroke-width="2.5" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg></div>
+        <div><div class="day-name">Tuesday</div><div class="day-date">Apr 8</div></div>
+      </div>
+      <span class="day-badge green">Coming</span>
+    </div>
+    <div class="day-row coming">
+      <div class="day-left">
+        <div class="day-icon green"><svg width="20" height="20" fill="none" stroke="#fff" stroke-width="2.5" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg></div>
+        <div><div class="day-name">Wednesday</div><div class="day-date">Apr 9</div></div>
+      </div>
+      <span class="day-badge green">Coming</span>
+    </div>
+    <div class="day-row coming">
+      <div class="day-left">
+        <div class="day-icon green"><svg width="20" height="20" fill="none" stroke="#fff" stroke-width="2.5" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg></div>
+        <div><div class="day-name">Thursday</div><div class="day-date">Apr 10</div></div>
+      </div>
+      <span class="day-badge green">Coming</span>
+    </div>
+    <div class="day-row">
+      <div class="day-left">
+        <div class="day-icon grey"><svg width="20" height="20" fill="none" stroke="#94a3b8" stroke-width="2.5" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg></div>
+        <div><div class="day-name">Friday</div><div class="day-date">Apr 11</div></div>
+      </div>
+      <span class="day-badge grey">Not coming</span>
+    </div>
+  </div>
+</div>
+
+<!-- =============== ADMIN PAGE =============== -->
+<div class="page" id="page-admin">
+
+  <!-- Navbar -->
+  <div class="navbar">
+    <div class="nav-placeholder"></div>
+    <span class="logo-text">sh<span class="i-dot">i</span>eld<span class="dot">.</span></span>
+    <a class="admin-icon" style="background:#2563eb;color:#fff" title="Admin">
+      <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+    </a>
+  </div>
+
+  <div class="admin-header">
+    <div>
+      <h1>Admin Dashboard</h1>
+      <div class="sub">Signed in as <strong style="color:#334155">Raíssa Ramos</strong></div>
+    </div>
+    <button class="signout">
+      <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/></svg>
+      Sign Out
+    </button>
+  </div>
+
+  <!-- Stats -->
+  <div class="stats-grid">
+    <div class="card card-compact stat-card"><div class="num blue">38</div><div class="label">Allocated</div></div>
+    <div class="card card-compact stat-card"><div class="num grey">12</div><div class="label">Empty slots</div></div>
+    <div class="card card-compact stat-card"><div class="num amber">5</div><div class="label">Waitlisted</div></div>
+  </div>
+
+  <!-- Weekly grid -->
+  <div class="card">
+    <div class="week-nav">
+      <button disabled>‹</button>
+      <div class="week-center">
+        <h3>This Week</h3>
+        <p>Apr 7 – Apr 11, 2025</p>
+      </div>
+      <button>›</button>
+    </div>
+
+    <!-- Monday -->
+    <div class="day-section">
+      <div class="day-section-header">
+        <div class="left"><span class="day-title">Monday</span><span class="day-d">Apr 7</span></div>
+        <div class="right"><span class="filled-badge">8/10 filled</span><span class="waiting-badge">⏱ 2 waiting</span></div>
+      </div>
+      <div class="spot-grid">
+        <div class="spot-cell occupied"><div class="s-label">1</div><div class="s-icons"></div><div class="s-name">João</div></div>
+        <div class="spot-cell empty"><div class="s-label">2</div><div class="s-icons"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="#f97316" stroke-width="2"><path d="M12 18V6M8 10l4-4 4 4M5 20h14"/></svg></div><div class="s-name">—</div></div>
+        <div class="spot-cell occupied"><div class="s-label">37</div><div class="s-icons"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2.5"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg></div><div class="s-name">Maria</div></div>
+        <div class="spot-cell occupied"><div class="s-label">38</div><div class="s-icons"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2.5"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg></div><div class="s-name">Pedro</div></div>
+        <div class="spot-cell occupied"><div class="s-label">39</div><div class="s-icons"></div><div class="s-name">Ana</div></div>
+        <div class="spot-cell fixed"><div class="s-label">40</div><div class="s-icons"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="#a855f7" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg></div><div class="s-name">Raíssa</div></div>
+        <div class="spot-cell occupied"><div class="s-label">41</div><div class="s-icons"></div><div class="s-name">Carlos</div></div>
+        <div class="spot-cell occupied"><div class="s-label">48</div><div class="s-icons"></div><div class="s-name">Sara</div></div>
+        <div class="spot-cell occupied"><div class="s-label">49</div><div class="s-icons"></div><div class="s-name">Miguel</div></div>
+        <div class="spot-cell empty"><div class="s-label">51</div><div class="s-icons"></div><div class="s-name">—</div></div>
+      </div>
+      <div class="waitlist-row">
+        <span class="wl-label">Waitlist:</span>
+        <span class="wl-pill">1. David</span>
+        <span class="wl-pill">2. Tiago</span>
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <!-- Tuesday -->
+    <div class="day-section">
+      <div class="day-section-header">
+        <div class="left"><span class="day-title">Tuesday</span><span class="day-d">Apr 8</span></div>
+        <div class="right"><span class="filled-badge">10/10 filled</span><span class="waiting-badge">⏱ 3 waiting</span></div>
+      </div>
+      <div class="spot-grid">
+        <div class="spot-cell occupied"><div class="s-label">1</div><div class="s-icons"></div><div class="s-name">David</div></div>
+        <div class="spot-cell occupied"><div class="s-label">2</div><div class="s-icons"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="#f97316" stroke-width="2"><path d="M12 18V6M8 10l4-4 4 4M5 20h14"/></svg></div><div class="s-name">Tiago</div></div>
+        <div class="spot-cell occupied"><div class="s-label">37</div><div class="s-icons"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2.5"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg></div><div class="s-name">Maria</div></div>
+        <div class="spot-cell occupied"><div class="s-label">38</div><div class="s-icons"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2.5"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg></div><div class="s-name">Inês</div></div>
+        <div class="spot-cell occupied"><div class="s-label">39</div><div class="s-icons"></div><div class="s-name">João</div></div>
+        <div class="spot-cell fixed"><div class="s-label">40</div><div class="s-icons"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="#a855f7" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg></div><div class="s-name">Raíssa</div></div>
+        <div class="spot-cell occupied"><div class="s-label">41</div><div class="s-icons"></div><div class="s-name">Pedro</div></div>
+        <div class="spot-cell occupied"><div class="s-label">48</div><div class="s-icons"></div><div class="s-name">Ana</div></div>
+        <div class="spot-cell occupied"><div class="s-label">49</div><div class="s-icons"></div><div class="s-name">Carlos</div></div>
+        <div class="spot-cell occupied"><div class="s-label">51</div><div class="s-icons"></div><div class="s-name">Sara</div></div>
+      </div>
+      <div class="waitlist-row">
+        <span class="wl-label">Waitlist:</span>
+        <span class="wl-pill">1. Nuno</span>
+        <span class="wl-pill">2. Rita</span>
+        <span class="wl-pill">3. Gonçalo</span>
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <!-- Wednesday -->
+    <div class="day-section">
+      <div class="day-section-header">
+        <div class="left"><span class="day-title">Wednesday</span><span class="day-d">Apr 9</span></div>
+        <div class="right"><span class="filled-badge">7/10 filled</span></div>
+      </div>
+      <div class="spot-grid">
+        <div class="spot-cell occupied"><div class="s-label">1</div><div class="s-icons"></div><div class="s-name">Sara</div></div>
+        <div class="spot-cell empty"><div class="s-label">2</div><div class="s-icons"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="#f97316" stroke-width="2"><path d="M12 18V6M8 10l4-4 4 4M5 20h14"/></svg></div><div class="s-name">—</div></div>
+        <div class="spot-cell occupied"><div class="s-label">37</div><div class="s-icons"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2.5"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg></div><div class="s-name">Inês</div></div>
+        <div class="spot-cell empty"><div class="s-label">38</div><div class="s-icons"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2.5"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg></div><div class="s-name">—</div></div>
+        <div class="spot-cell occupied"><div class="s-label">39</div><div class="s-icons"></div><div class="s-name">Nuno</div></div>
+        <div class="spot-cell fixed"><div class="s-label">40</div><div class="s-icons"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="#a855f7" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg></div><div class="s-name">Raíssa</div></div>
+        <div class="spot-cell occupied"><div class="s-label">41</div><div class="s-icons"></div><div class="s-name">David</div></div>
+        <div class="spot-cell occupied"><div class="s-label">48</div><div class="s-icons"></div><div class="s-name">Miguel</div></div>
+        <div class="spot-cell empty"><div class="s-label">49</div><div class="s-icons"></div><div class="s-name">—</div></div>
+        <div class="spot-cell occupied"><div class="s-label">51</div><div class="s-icons"></div><div class="s-name">Tiago</div></div>
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <!-- Thursday -->
+    <div class="day-section">
+      <div class="day-section-header">
+        <div class="left"><span class="day-title">Thursday</span><span class="day-d">Apr 10</span></div>
+        <div class="right"><span class="filled-badge">9/10 filled</span><span class="waiting-badge">⏱ 1 waiting</span></div>
+      </div>
+      <div class="spot-grid">
+        <div class="spot-cell occupied"><div class="s-label">1</div><div class="s-icons"></div><div class="s-name">Ana</div></div>
+        <div class="spot-cell occupied"><div class="s-label">2</div><div class="s-icons"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="#f97316" stroke-width="2"><path d="M12 18V6M8 10l4-4 4 4M5 20h14"/></svg></div><div class="s-name">Tiago</div></div>
+        <div class="spot-cell occupied"><div class="s-label">37</div><div class="s-icons"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2.5"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg></div><div class="s-name">Maria</div></div>
+        <div class="spot-cell occupied"><div class="s-label">38</div><div class="s-icons"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2.5"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg></div><div class="s-name">Inês</div></div>
+        <div class="spot-cell occupied"><div class="s-label">39</div><div class="s-icons"></div><div class="s-name">Pedro</div></div>
+        <div class="spot-cell fixed"><div class="s-label">40</div><div class="s-icons"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="#a855f7" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg></div><div class="s-name">Raíssa</div></div>
+        <div class="spot-cell occupied"><div class="s-label">41</div><div class="s-icons"></div><div class="s-name">Carlos</div></div>
+        <div class="spot-cell occupied"><div class="s-label">48</div><div class="s-icons"></div><div class="s-name">Gonçalo</div></div>
+        <div class="spot-cell occupied"><div class="s-label">49</div><div class="s-icons"></div><div class="s-name">Sara</div></div>
+        <div class="spot-cell empty"><div class="s-label">51</div><div class="s-icons"></div><div class="s-name">—</div></div>
+      </div>
+      <div class="waitlist-row">
+        <span class="wl-label">Waitlist:</span>
+        <span class="wl-pill">1. Nuno</span>
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <!-- Friday -->
+    <div class="day-section">
+      <div class="day-section-header">
+        <div class="left"><span class="day-title">Friday</span><span class="day-d">Apr 11</span></div>
+        <div class="right"><span class="filled-badge">6/10 filled</span></div>
+      </div>
+      <div class="spot-grid">
+        <div class="spot-cell occupied"><div class="s-label">1</div><div class="s-icons"></div><div class="s-name">João</div></div>
+        <div class="spot-cell empty"><div class="s-label">2</div><div class="s-icons"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="#f97316" stroke-width="2"><path d="M12 18V6M8 10l4-4 4 4M5 20h14"/></svg></div><div class="s-name">—</div></div>
+        <div class="spot-cell empty"><div class="s-label">37</div><div class="s-icons"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2.5"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg></div><div class="s-name">—</div></div>
+        <div class="spot-cell occupied"><div class="s-label">38</div><div class="s-icons"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2.5"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg></div><div class="s-name">Maria</div></div>
+        <div class="spot-cell occupied"><div class="s-label">39</div><div class="s-icons"></div><div class="s-name">David</div></div>
+        <div class="spot-cell empty"><div class="s-label">40</div><div class="s-icons"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="#a855f7" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg></div><div class="s-name" style="color:#a855f7">Released</div></div>
+        <div class="spot-cell occupied"><div class="s-label">41</div><div class="s-icons"></div><div class="s-name">Miguel</div></div>
+        <div class="spot-cell occupied"><div class="s-label">48</div><div class="s-icons"></div><div class="s-name">Ana</div></div>
+        <div class="spot-cell empty"><div class="s-label">49</div><div class="s-icons"></div><div class="s-name">—</div></div>
+        <div class="spot-cell occupied"><div class="s-label">51</div><div class="s-icons"></div><div class="s-name">Pedro</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Requests table -->
+  <div class="card">
+    <div class="req-header">
+      <svg width="16" height="16" fill="none" stroke="#64748b" stroke-width="2" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>
+      <h3>Requests this week (12)</h3>
+    </div>
+
+    <div class="legend">
+      <span class="legend-item"><span class="legend-dot green"></span>Allocated</span>
+      <span class="legend-item"><span class="legend-dot amber"></span>Waitlisted</span>
+      <span class="legend-item"><span class="legend-dot grey"></span>Requested</span>
+    </div>
+
+    <div class="req-row"><div class="req-name"><div class="rn">João</div><div class="rt">CS Team</div></div><div class="req-days"><div class="req-day alloc">M</div><div class="req-day none">T</div><div class="req-day none">W</div><div class="req-day none">T</div><div class="req-day alloc">F</div></div><div class="req-ratio"><span class="rg">2</span><span class="rs">/</span><span class="rt2">2</span></div></div>
+    <div class="req-row"><div class="req-name"><div class="rn">Maria</div><div class="rt">CloudOps</div></div><div class="req-days"><div class="req-day alloc">M</div><div class="req-day alloc">T</div><div class="req-day none">W</div><div class="req-day alloc">T</div><div class="req-day alloc">F</div></div><div class="req-ratio"><span class="rg">3</span><span class="rs">/</span><span class="rt2">3</span></div></div>
+    <div class="req-row"><div class="req-name"><div class="rn">Pedro</div><div class="rt">PMs</div></div><div class="req-days"><div class="req-day none">M</div><div class="req-day alloc">T</div><div class="req-day none">W</div><div class="req-day alloc">T</div><div class="req-day alloc">F</div></div><div class="req-ratio"><span class="rg">3</span><span class="rs">/</span><span class="rt2">3</span></div></div>
+    <div class="req-row"><div class="req-name"><div class="rn">Ana</div><div class="rt">Marketing</div></div><div class="req-days"><div class="req-day alloc">M</div><div class="req-day alloc">T</div><div class="req-day none">W</div><div class="req-day alloc">T</div><div class="req-day alloc">F</div></div><div class="req-ratio"><span class="rg">3</span><span class="rs">/</span><span class="rt2">3</span></div></div>
+    <div class="req-row"><div class="req-name"><div class="rn">David</div><div class="rt">DevOps</div></div><div class="req-days"><div class="req-day wait">M</div><div class="req-day alloc">T</div><div class="req-day alloc">W</div><div class="req-day none">T</div><div class="req-day alloc">F</div></div><div class="req-ratio"><span class="rg">3</span><span class="rs">/</span><span class="rt2">3</span></div></div>
+    <div class="req-row"><div class="req-name"><div class="rn">Sara</div><div class="rt">App Team</div></div><div class="req-days"><div class="req-day alloc">M</div><div class="req-day alloc">T</div><div class="req-day alloc">W</div><div class="req-day alloc">T</div><div class="req-day none">F</div></div><div class="req-ratio"><span class="rg">3</span><span class="rs">/</span><span class="rt2">3</span></div></div>
+    <div class="req-row"><div class="req-name"><div class="rn">Carlos</div><div class="rt">CS Team</div></div><div class="req-days"><div class="req-day alloc">M</div><div class="req-day alloc">T</div><div class="req-day none">W</div><div class="req-day alloc">T</div><div class="req-day none">F</div></div><div class="req-ratio"><span class="rg">3</span><span class="rs">/</span><span class="rt2">3</span></div></div>
+    <div class="req-row"><div class="req-name"><div class="rn">Miguel</div><div class="rt">Data Sources</div></div><div class="req-days"><div class="req-day alloc">M</div><div class="req-day none">T</div><div class="req-day alloc">W</div><div class="req-day none">T</div><div class="req-day alloc">F</div></div><div class="req-ratio"><span class="rg">3</span><span class="rs">/</span><span class="rt2">3</span></div></div>
+    <div class="req-row"><div class="req-name"><div class="rn">Tiago</div><div class="rt">DevOps</div></div><div class="req-days"><div class="req-day none">M</div><div class="req-day alloc">T</div><div class="req-day alloc">W</div><div class="req-day alloc">T</div><div class="req-day none">F</div></div><div class="req-ratio"><span class="rg">3</span><span class="rs">/</span><span class="rt2">3</span></div></div>
+    <div class="req-row"><div class="req-name"><div class="rn">Inês</div><div class="rt">CloudOps</div></div><div class="req-days"><div class="req-day none">M</div><div class="req-day alloc">T</div><div class="req-day alloc">W</div><div class="req-day alloc">T</div><div class="req-day none">F</div></div><div class="req-ratio"><span class="rg">3</span><span class="rs">/</span><span class="rt2">3</span></div></div>
+    <div class="req-row"><div class="req-name"><div class="rn">Nuno</div><div class="rt">SMs</div></div><div class="req-days"><div class="req-day none">M</div><div class="req-day none">T</div><div class="req-day alloc">W</div><div class="req-day wait">T</div><div class="req-day none">F</div></div><div class="req-ratio"><span class="rg">1</span><span class="rs">/</span><span class="rt2">2</span></div></div>
+    <div class="req-row"><div class="req-name"><div class="rn">Gonçalo</div><div class="rt">App Team</div></div><div class="req-days"><div class="req-day none">M</div><div class="req-day wait">T</div><div class="req-day none">W</div><div class="req-day alloc">T</div><div class="req-day none">F</div></div><div class="req-ratio"><span class="rg">1</span><span class="rs">/</span><span class="rt2">2</span></div></div>
+    <div class="req-row"><div class="req-name"><div class="rn">Rita</div><div class="rt">Marketing</div></div><div class="req-days"><div class="req-day none">M</div><div class="req-day wait">T</div><div class="req-day none">W</div><div class="req-day none">T</div><div class="req-day none">F</div></div><div class="req-ratio"><span class="rg">0</span><span class="rs">/</span><span class="rt2">1</span></div></div>
+  </div>
+
+</div>
+
+<script>
+function showPage(id) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'))
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'))
+  document.getElementById('page-' + id).classList.add('active')
+  event.target.classList.add('active')
+  window.scrollTo(0, 0)
+}
+</script>
+</body>
+</html>

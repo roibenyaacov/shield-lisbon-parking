@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Card } from '@/components/ui/Card'
-import { Check, Clock, ChevronRight, ChevronLeft, ChevronDown, Zap, Bike, LogOut, PlusCircle } from 'lucide-react'
+import { Check, Clock, ChevronRight, ChevronLeft, ChevronDown, Zap, Bike, LogOut, PlusCircle, Lock, Car } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { format, addDays, startOfWeek, addWeeks, isBefore, startOfDay, isToday } from 'date-fns'
 import { DAY_LABELS, DAY_NAMES } from '@/lib/constants'
@@ -12,6 +12,9 @@ import type { ParkingSpot, Profile, WeeklyAllocation } from '@/types/db'
 
 interface MyWeekProps {
   userId: string
+  fixedSpotId?: number
+  fixedSpotLabel?: string
+  userName?: string
 }
 
 interface DayInfo {
@@ -30,12 +33,15 @@ interface SpotInfo {
   label: string
   priority: string
   isFixed: boolean
+  fixedOwnerName: string | null
   occupantName: string | null
   isCurrentUser: boolean
   isAvailable: boolean
+  isFixedAndOccupiedByOwner: boolean
+  isCurrentUserFixedSpot: boolean
 }
 
-export function MyWeek({ userId }: MyWeekProps) {
+export function MyWeek({ userId, fixedSpotId, fixedSpotLabel, userName }: MyWeekProps) {
   const [weekOffset, setWeekOffset] = useState(0)
   const [days, setDays] = useState<DayInfo[]>([])
   const [loading, setLoading] = useState(true)
@@ -44,7 +50,7 @@ export function MyWeek({ userId }: MyWeekProps) {
   const [spotsLoading, setSpotsLoading] = useState(false)
   const [direction, setDirection] = useState(0)
   const [actionLoading, setActionLoading] = useState<number | null>(null)
-  const [confirmAction, setConfirmAction] = useState<{ spotId: number; date: string; type: 'release' | 'claim' } | null>(null)
+  const [confirmAction, setConfirmAction] = useState<{ spotId: number; date: string; type: 'release' | 'claim' | 'reclaim' } | null>(null)
   const supabase = createClient()
 
   const loadWeek = useCallback(async (offset: number) => {
@@ -82,9 +88,9 @@ export function MyWeek({ userId }: MyWeekProps) {
       const alloc = allocs.find(a => a.date === d.date)
       return {
         ...d,
-        spotLabel: alloc?.spot?.label ?? null,
+        spotLabel: alloc?.spot?.label ?? (fixedSpotId ? (fixedSpotLabel ?? null) : null),
         spotPriority: alloc?.spot?.priority ?? null,
-        spotId: alloc?.spot?.id ?? null,
+        spotId: alloc?.spot?.id ?? (fixedSpotId ?? null),
         waitlisted: waitlistedDates.has(d.date),
       }
     }))
@@ -111,23 +117,29 @@ export function MyWeek({ userId }: MyWeekProps) {
   const loadDaySpots = async (date: string) => {
     setSpotsLoading(true)
     const [spotsRes, allocsRes] = await Promise.all([
-      supabase.from('parking_spots').select('*').eq('is_active', true).order('label'),
+      supabase.from('parking_spots').select('*, fixed_user:profiles!parking_spots_fixed_user_id_fkey(full_name)').eq('is_active', true).order('label'),
       supabase.from('weekly_allocations').select('*, user:profiles(*)').eq('date', date),
     ])
 
-    const spots = (spotsRes.data ?? []) as ParkingSpot[]
+    const spots = (spotsRes.data ?? []) as (ParkingSpot & { fixed_user: { full_name: string } | null })[]
     const allocs = (allocsRes.data ?? []) as (WeeklyAllocation & { user: Profile })[]
 
     setDaySpots(spots.map(s => {
       const alloc = allocs.find(a => a.spot_id === s.id)
+      const isOwnerFixedSpot = fixedSpotId != null && fixedSpotId === s.id
+      const isReserved = !!s.fixed_user_id || !!s.reserved_name
+      const isOccupiedByFixedOwner = isReserved && (!alloc || alloc?.user_id === s.fixed_user_id)
       return {
         id: s.id,
         label: s.label,
         priority: s.priority,
-        isFixed: !!s.fixed_user_id,
+        isFixed: isReserved,
+        fixedOwnerName: s.fixed_user?.full_name ?? s.reserved_name ?? null,
         occupantName: alloc?.user?.full_name ?? null,
         isCurrentUser: alloc?.user_id === userId,
         isAvailable: !alloc,
+        isFixedAndOccupiedByOwner: isOccupiedByFixedOwner && !isOwnerFixedSpot,
+        isCurrentUserFixedSpot: isOwnerFixedSpot,
       }
     }))
     setSpotsLoading(false)
@@ -149,7 +161,9 @@ export function MyWeek({ userId }: MyWeekProps) {
 
     if (spot.isCurrentUser) {
       setConfirmAction({ spotId: spot.id, date, type: 'release' })
-    } else if (spot.isAvailable) {
+    } else if (spot.isCurrentUserFixedSpot && spot.isAvailable) {
+      setConfirmAction({ spotId: spot.id, date, type: 'release' })
+    } else if (spot.isAvailable && !spot.isFixed) {
       const userHasSpotToday = days.find(d => d.date === date)?.spotId
       if (userHasSpotToday) {
         toast.error('You already have a spot for this day')
@@ -178,6 +192,20 @@ export function MyWeek({ userId }: MyWeekProps) {
         const data = await res.json()
         if (!res.ok) throw new Error(data.error)
         toast.success('Spot released')
+      } else if (confirmAction.type === 'reclaim') {
+        const res = await fetch('/api/release', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            date: confirmAction.date,
+            spot_id: confirmAction.spotId,
+            user_id: userId,
+            action: 'reclaim',
+          }),
+        })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error)
+        toast.success('Spot reclaimed!')
       } else {
         const res = await fetch('/api/claim', {
           method: 'POST',
@@ -324,7 +352,9 @@ export function MyWeek({ userId }: MyWeekProps) {
                               ? 'bg-amber-400 text-white'
                               : 'bg-slate-100 text-slate-400'
                         }`}>
-                          {day.spotLabel ? day.spotLabel : day.waitlisted ? (
+                          {day.spotLabel ? (
+                            <Car className="w-4.5 h-4.5" />
+                          ) : day.waitlisted ? (
                             <Clock className="w-4 h-4" />
                           ) : '–'}
                         </div>
@@ -376,6 +406,9 @@ export function MyWeek({ userId }: MyWeekProps) {
                                   <span className="flex items-center gap-1 text-[10px] font-medium text-red-500">
                                     <span className="w-2 h-2 rounded-full bg-red-400" /> Occupied
                                   </span>
+                                  <span className="flex items-center gap-1 text-[10px] font-medium text-red-500">
+                                    <Lock className="w-2.5 h-2.5" /> Reserved
+                                  </span>
                                 </div>
                               )}
                             </div>
@@ -388,7 +421,13 @@ export function MyWeek({ userId }: MyWeekProps) {
                             ) : (
                               <div className="grid grid-cols-4 gap-2">
                                 {daySpots.map((spot) => {
-                                  const isClickable = !day.isPast && (spot.isCurrentUser || spot.isAvailable)
+                                  const isOwnFixed = spot.isCurrentUserFixedSpot
+                                  const showAsOwn = spot.isCurrentUser || (isOwnFixed && spot.isAvailable)
+                                  const isClickable = !day.isPast && (
+                                    spot.isCurrentUser ||
+                                    (isOwnFixed && spot.isAvailable) ||
+                                    (spot.isAvailable && !spot.isFixed)
+                                  )
                                   const isLoading = actionLoading === spot.id
 
                                   return (
@@ -402,11 +441,13 @@ export function MyWeek({ userId }: MyWeekProps) {
                                       whileTap={isClickable ? { scale: 0.92 } : undefined}
                                       transition={{ type: 'spring', stiffness: 300, damping: 25 }}
                                       className={`rounded-xl border-2 p-2 text-center transition-all relative ${
-                                        spot.isCurrentUser
+                                        showAsOwn
                                           ? 'border-blue-500 bg-blue-50 shadow-md shadow-blue-600/10'
-                                          : spot.isAvailable
-                                            ? 'border-green-400 bg-green-50'
-                                            : 'border-red-300 bg-red-50'
+                                          : spot.isFixedAndOccupiedByOwner
+                                            ? 'border-red-400 bg-red-50'
+                                            : spot.isAvailable
+                                              ? 'border-green-400 bg-green-50'
+                                              : 'border-red-300 bg-red-50'
                                       } ${isClickable && !isLoading ? 'active:scale-95 cursor-pointer' : ''} ${isLoading ? 'opacity-50' : ''}`}
                                     >
                                       {isLoading && (
@@ -415,21 +456,32 @@ export function MyWeek({ userId }: MyWeekProps) {
                                         </div>
                                       )}
                                       <p className={`text-lg font-bold ${
-                                        spot.isCurrentUser ? 'text-blue-600'
+                                        showAsOwn ? 'text-blue-600'
+                                        : spot.isFixedAndOccupiedByOwner ? 'text-red-500'
                                         : spot.isAvailable ? 'text-green-600'
                                         : 'text-red-400'
                                       }`}>{spot.label}</p>
                                       <p className={`text-[10px] font-medium truncate ${
-                                        spot.isCurrentUser ? 'text-blue-500'
+                                        showAsOwn ? 'text-blue-500'
+                                        : spot.isFixedAndOccupiedByOwner ? 'text-red-400'
                                         : spot.isAvailable ? 'text-green-500'
                                         : 'text-red-400'
                                       }`}>
-                                        {spot.isCurrentUser ? 'You' : spot.isAvailable ? 'Available' : spot.occupantName?.split(' ')[0] ?? 'Taken'}
+                                        {showAsOwn ? (userName?.split(' ')[0] ?? 'You')
+                                          : spot.isFixedAndOccupiedByOwner ? (spot.fixedOwnerName?.split(' ')[0] ?? 'Reserved')
+                                          : spot.isAvailable ? 'Available'
+                                          : spot.occupantName?.split(' ')[0] ?? 'Taken'}
                                       </p>
-                                      {spot.priority === 'ev' && (
+                                      {spot.isFixedAndOccupiedByOwner && (
+                                        <Lock className="w-3 h-3 text-red-400 mx-auto mt-0.5" />
+                                      )}
+                                      {isOwnFixed && showAsOwn && (
+                                        <Lock className="w-3 h-3 text-blue-400 mx-auto mt-0.5" />
+                                      )}
+                                      {!spot.isFixedAndOccupiedByOwner && !showAsOwn && spot.priority === 'ev' && (
                                         <Zap className="w-3 h-3 text-green-500 mx-auto mt-0.5" />
                                       )}
-                                      {spot.priority === 'motorcycle' && (
+                                      {!spot.isFixedAndOccupiedByOwner && !showAsOwn && spot.priority === 'motorcycle' && (
                                         <Bike className="w-3 h-3 text-orange-500 mx-auto mt-0.5" />
                                       )}
                                     </motion.button>
@@ -469,16 +521,22 @@ export function MyWeek({ userId }: MyWeekProps) {
             >
               <div className="p-6 text-center">
                 <div className={`w-14 h-14 mx-auto mb-4 rounded-full flex items-center justify-center ${
-                  confirmAction.type === 'release' ? 'bg-red-100' : 'bg-green-100'
+                  confirmAction.type === 'release' ? 'bg-red-100'
+                  : confirmAction.type === 'reclaim' ? 'bg-blue-100'
+                  : 'bg-green-100'
                 }`}>
                   <span className={`text-xl font-bold ${
-                    confirmAction.type === 'release' ? 'text-red-600' : 'text-green-600'
+                    confirmAction.type === 'release' ? 'text-red-600'
+                    : confirmAction.type === 'reclaim' ? 'text-blue-600'
+                    : 'text-green-600'
                   }`}>
                     {daySpots.find(s => s.id === confirmAction.spotId)?.label}
                   </span>
                 </div>
                 <h3 className="text-lg font-bold text-slate-900 mb-1">
-                  {confirmAction.type === 'release' ? 'Release This Spot?' : 'Claim This Spot?'}
+                  {confirmAction.type === 'release' ? 'Release This Spot?'
+                    : confirmAction.type === 'reclaim' ? 'Reclaim Your Spot?'
+                    : 'Claim This Spot?'}
                 </h3>
                 <p className="text-sm text-slate-400">
                   {format(new Date(confirmAction.date + 'T12:00:00'), 'EEEE, MMM d')}
@@ -497,12 +555,14 @@ export function MyWeek({ userId }: MyWeekProps) {
                   className={`flex-1 py-3.5 text-sm font-semibold transition-colors border-l border-slate-100 ${
                     confirmAction.type === 'release'
                       ? 'text-red-600 active:bg-red-50'
-                      : 'text-green-600 active:bg-green-50'
+                      : 'text-blue-600 active:bg-blue-50'
                   }`}
                 >
                   {actionLoading
                     ? 'Processing...'
-                    : confirmAction.type === 'release' ? 'Release' : 'Claim'}
+                    : confirmAction.type === 'release' ? 'Release'
+                    : confirmAction.type === 'reclaim' ? 'Reclaim'
+                    : 'Claim'}
                 </button>
               </div>
             </motion.div>

@@ -3,7 +3,7 @@
 import { Navbar } from './Navbar'
 import { Toaster } from 'react-hot-toast'
 
-export function Shell({ children }: { children: React.ReactNode }) {
+export function Shell({ children, showAdminLink }: { children: React.ReactNode; showAdminLink?: boolean }) {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-orange-50/20">
       <Toaster
@@ -21,7 +21,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
           },
         }}
       />
-      <Navbar />
+      <Navbar showAdminLink={showAdminLink} />
       <main className="mx-auto max-w-2xl px-4 sm:px-6 py-6 pb-8 ios-safe-bottom">
         {children}
       </main>

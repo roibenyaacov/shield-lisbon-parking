@@ -147,14 +147,14 @@ BEGIN
     vehicle_type = COALESCE(EXCLUDED.vehicle_type, profiles.vehicle_type);
 
   -- Auto-assign fixed spots based on email
-  -- Spot 39 → Raíssa Ramos
+  -- Spot 40 → Raíssa Ramos
   IF NEW.email = 'raissa.ramos@shieldfc.com' THEN
-    UPDATE public.parking_spots SET fixed_user_id = NEW.id WHERE label = '39';
+    UPDATE public.parking_spots SET fixed_user_id = NEW.id WHERE label = '40';
   END IF;
 
-  -- Spot 49 → Rita Vaz
-  IF NEW.email = 'rita.vaz@shieldfc.com' THEN
-    UPDATE public.parking_spots SET fixed_user_id = NEW.id WHERE label = '49';
+  -- Spot 39 → Roi (temporary, for testing)
+  IF NEW.email = 'roi2304@gmail.com' THEN
+    UPDATE public.parking_spots SET fixed_user_id = NEW.id WHERE label = '39';
   END IF;
 
   RETURN NEW;
@@ -275,8 +275,8 @@ CREATE POLICY "Users can delete own releases"
 -- ============================================
 
 INSERT INTO parking_spots (label, priority) VALUES
-  ('1',  'motorcycle'),
-  ('2',  'general'),
+  ('1',  'general'),
+  ('2',  'motorcycle'),
   ('37', 'ev'),
   ('38', 'ev'),
   ('39', 'general'),
@@ -287,9 +287,8 @@ INSERT INTO parking_spots (label, priority) VALUES
   ('51', 'general');
 
 -- Fixed spots are auto-assigned via the handle_new_user() trigger:
---   Spot 39 → raissa.ramos@shieldfc.com
---   Spot 49 → rita.vaz@shieldfc.com
--- When these users sign up, their spots are linked automatically.
+--   Spot 40 → raissa.ramos@shieldfc.com
+-- When this user signs up, her spot is linked automatically.
 --
 -- To change emails, update the IF conditions in handle_new_user() above.
 -- To manually assign after the fact:

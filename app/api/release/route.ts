@@ -41,7 +41,6 @@ export async function POST(request: Request) {
 
     // ── RECLAIM ───────────────────────────────────────────────────────
     if (action === 'reclaim') {
-      // Only fixed-spot owners may reclaim — verify the spot belongs to them
       const { data: fixedSpot } = await serviceClient
         .from('parking_spots')
         .select('id')
@@ -53,14 +52,36 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'You do not own this fixed spot' }, { status: 403 })
       }
 
+      const { data: existingAlloc } = await serviceClient
+        .from('weekly_allocations')
+        .select('id')
+        .eq('spot_id', spot_id)
+        .eq('date', date)
+        .maybeSingle()
+
+      if (existingAlloc) {
+        return NextResponse.json({ error: 'Spot is already taken for this day' }, { status: 409 })
+      }
+
+      const { data: userAlloc } = await serviceClient
+        .from('weekly_allocations')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('date', date)
+        .maybeSingle()
+
+      if (userAlloc) {
+        return NextResponse.json({ error: 'You already have a spot for this day' }, { status: 409 })
+      }
+
       const { error: insertError } = await serviceClient
         .from('weekly_allocations')
-        .upsert({
+        .insert({
           user_id: user.id,
           spot_id,
           date,
           pass_number: 0,
-        } as any, { onConflict: 'user_id,date' })
+        })
 
       if (insertError) {
         return NextResponse.json({ error: insertError.message }, { status: 500 })
@@ -70,12 +91,6 @@ export async function POST(request: Request) {
     }
 
     // ── RELEASE (atomic via RPC) ──────────────────────────────────────
-    // release_and_promote runs inside a single PostgreSQL transaction:
-    //   1. Verifies the user owns the allocation (row-level lock).
-    //   2. Deletes the allocation.
-    //   3. Promotes the first waitlist entry for that date (if any).
-    // This prevents race conditions where two concurrent releases could
-    // promote the same waitlist entry or orphan a spot.
     const { data: rpcResult, error: rpcError } = await serviceClient
       .rpc('release_and_promote', {
         p_user_id: user.id,
@@ -91,6 +106,44 @@ export async function POST(request: Request) {
       released?: boolean
       promoted_user_id?: string | null
       error?: string
+    }
+
+    // Fixed spot user releasing without an existing allocation (default reserved state)
+    if (result.error === 'You do not have this allocation') {
+      const { data: fixedSpot } = await serviceClient
+        .from('parking_spots')
+        .select('id')
+        .eq('id', spot_id)
+        .eq('fixed_user_id', user.id)
+        .single()
+
+      if (fixedSpot) {
+        const { data: waitlistEntry } = await serviceClient
+          .from('waitlist')
+          .select('*')
+          .eq('date', date)
+          .order('created_at', { ascending: true })
+          .limit(1)
+          .maybeSingle()
+
+        if (waitlistEntry) {
+          await serviceClient.from('weekly_allocations').insert({
+            user_id: waitlistEntry.user_id,
+            spot_id,
+            date,
+            pass_number: 4,
+          })
+          await serviceClient.from('waitlist').delete().eq('id', waitlistEntry.id)
+
+          return NextResponse.json({
+            success: true,
+            released: true,
+            promoted_user: waitlistEntry.user_id,
+          })
+        }
+
+        return NextResponse.json({ success: true, released: true, promoted_user: null })
+      }
     }
 
     if (result.error) {

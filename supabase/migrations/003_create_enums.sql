@@ -166,11 +166,12 @@ BEGIN
 
   -- Auto-assign fixed spots based on email
   IF NEW.email = 'raissa.ramos@shieldfc.com' THEN
-    UPDATE public.parking_spots SET fixed_user_id = NEW.id WHERE label = '39';
+    UPDATE public.parking_spots SET fixed_user_id = NEW.id WHERE label = '40';
   END IF;
 
-  IF NEW.email = 'rita.vaz@shieldfc.com' THEN
-    UPDATE public.parking_spots SET fixed_user_id = NEW.id WHERE label = '49';
+  -- Spot 39 → Roi (temporary, for testing)
+  IF NEW.email = 'roi2304@gmail.com' THEN
+    UPDATE public.parking_spots SET fixed_user_id = NEW.id WHERE label = '39';
   END IF;
 
   RETURN NEW;

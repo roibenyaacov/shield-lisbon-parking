@@ -51,7 +51,7 @@ export default async function DashboardPage() {
   const existingRequest = rawRequest as WeeklyRequest | null
 
   return (
-    <Shell>
+    <Shell showAdminLink={profile.role === 'admin'}>
       <div className="space-y-5">
         <div className="flex items-center justify-between">
           <div>
@@ -62,7 +62,7 @@ export default async function DashboardPage() {
           <SignOutButton />
         </div>
 
-        <MyWeek userId={user.id} />
+        <MyWeek userId={user.id} userName={profile.full_name ?? undefined} />
 
         <RequestForm
           userId={user.id}

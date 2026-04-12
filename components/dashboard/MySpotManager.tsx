@@ -3,9 +3,9 @@
 import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Card } from '@/components/ui/Card'
-import { Lock, CalendarDays, Check, X, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Lock, Check, X, ChevronLeft, ChevronRight, Unlock } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { format, addDays, startOfWeek, addWeeks, isBefore, startOfDay } from 'date-fns'
+import { format, addDays, startOfWeek, addWeeks, isBefore, startOfDay, isToday as checkIsToday } from 'date-fns'
 import { DAY_LABELS, DAY_NAMES } from '@/lib/constants'
 import type { ParkingSpot } from '@/types/db'
 import toast from 'react-hot-toast'
@@ -22,6 +22,7 @@ interface DayStatus {
   coming: boolean
   toggling: boolean
   isPast: boolean
+  isToday: boolean
 }
 
 export function MySpotManager({ userId, userName, spot }: MySpotManagerProps) {
@@ -41,6 +42,7 @@ export function MySpotManager({ userId, userName, spot }: MySpotManagerProps) {
         date: format(d, 'yyyy-MM-dd'),
         dayName: DAY_LABELS[DAY_NAMES[i]],
         isPast: isBefore(d, today),
+        isToday: checkIsToday(d),
       }
     })
 
@@ -64,6 +66,16 @@ export function MySpotManager({ userId, userName, spot }: MySpotManagerProps) {
   useEffect(() => {
     loadWeek(weekOffset)
   }, [weekOffset])
+
+  useEffect(() => {
+    const channel = supabase
+      .channel('my-spot-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'weekly_allocations' }, () => {
+        loadWeek(weekOffset)
+      })
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [supabase, loadWeek, weekOffset])
 
   const goToWeek = (dir: number) => {
     if (navigator.vibrate) navigator.vibrate(10)
@@ -96,8 +108,8 @@ export function MySpotManager({ userId, userName, spot }: MySpotManagerProps) {
       const dayLabel = format(new Date(date + 'T12:00:00'), 'EEEE, MMM d')
       toast.success(
         currentlyComing
-          ? `Released for ${dayLabel}`
-          : `Reclaimed for ${dayLabel}`,
+          ? `Spot #${spot.label} released for ${dayLabel}`
+          : `Spot #${spot.label} reclaimed for ${dayLabel}`,
         { icon: currentlyComing ? '🔓' : '🅿️' }
       )
     } else {
@@ -117,25 +129,34 @@ export function MySpotManager({ userId, userName, spot }: MySpotManagerProps) {
       : `${format(monday, 'MMM d')} – ${format(friday, 'MMM d')}`
 
   const comingCount = weekDays.filter(d => d.coming).length
-  const notComingCount = weekDays.filter(d => !d.coming && !d.isPast).length
+  const releasedCount = weekDays.filter(d => !d.coming && !d.isPast).length
 
   return (
     <div className="space-y-4">
-      <Card padding="lg">
-        <div className="flex items-center gap-4">
-          <div className="w-16 h-16 rounded-2xl bg-blue-600 flex items-center justify-center shadow-lg shadow-blue-600/30">
-            <span className="text-white text-2xl font-bold">#{spot.label}</span>
-          </div>
-          <div className="flex-1">
-            <h2 className="text-lg font-bold text-slate-900">{userName}&apos;s Spot</h2>
-            <div className="flex items-center gap-1.5 mt-1">
+      {/* Spot hero card */}
+      <Card padding="none">
+        <div className="bg-gradient-to-br from-blue-600 to-blue-700 rounded-t-3xl px-6 py-5 text-center">
+          <p className="text-blue-200 text-sm font-medium">Your Fixed Spot</p>
+          <p className="text-white text-5xl font-bold mt-1">#{spot.label}</p>
+        </div>
+        <div className="px-6 py-4 flex items-center justify-between">
+          <div>
+            <h2 className="text-lg font-bold text-slate-900">{userName}</h2>
+            <div className="flex items-center gap-1.5 mt-0.5">
               <Lock className="w-3.5 h-3.5 text-blue-600" />
               <span className="text-sm text-blue-600 font-medium">Fixed assignment</span>
             </div>
           </div>
+          {!loading && (
+            <div className="text-right">
+              <p className="text-2xl font-bold text-green-600">{comingCount}</p>
+              <p className="text-[11px] text-slate-400">days this week</p>
+            </div>
+          )}
         </div>
       </Card>
 
+      {/* Week schedule */}
       <Card padding="lg">
         {/* Week navigation */}
         <div className="flex items-center justify-between mb-1">
@@ -169,17 +190,17 @@ export function MySpotManager({ userId, userName, spot }: MySpotManagerProps) {
             <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-green-100 text-green-700">
               {comingCount} coming
             </span>
-            {notComingCount > 0 && (
-              <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-slate-100 text-slate-500">
-                {notComingCount} off
+            {releasedCount > 0 && (
+              <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-100 text-amber-700">
+                {releasedCount} released
               </span>
             )}
           </div>
         )}
 
-        <p className="text-xs text-slate-400 mb-3">Tap a day to toggle your attendance</p>
+        <p className="text-xs text-slate-400 mb-3 text-center">Tap a day to release or reclaim your spot</p>
 
-        {/* Days list with animation on week change */}
+        {/* Days list */}
         <AnimatePresence mode="wait" initial={false}>
           <motion.div
             key={weekOffset}
@@ -191,7 +212,7 @@ export function MySpotManager({ userId, userName, spot }: MySpotManagerProps) {
             {loading ? (
               <div className="space-y-3">
                 {Array.from({ length: 5 }).map((_, i) => (
-                  <div key={i} className="h-14 rounded-2xl bg-slate-100 animate-pulse" />
+                  <div key={i} className="h-[68px] rounded-2xl bg-slate-100 animate-pulse" />
                 ))}
               </div>
             ) : (
@@ -213,39 +234,63 @@ export function MySpotManager({ userId, userName, spot }: MySpotManagerProps) {
                           ? 'opacity-60 border-slate-200'
                           : day.coming
                             ? 'border-green-300 bg-green-50'
-                            : 'border-slate-200 bg-slate-50'
-                    }`}
+                            : 'border-amber-200 bg-amber-50'
+                    } ${day.isToday && !day.isPast ? 'ring-2 ring-blue-600/30' : ''}`}
                   >
                     <div className="flex items-center gap-3">
                       <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors duration-200 ${
-                        day.coming ? 'bg-green-500' : 'bg-slate-200'
+                        day.coming ? 'bg-green-500' : day.isPast ? 'bg-slate-200' : 'bg-amber-400'
                       }`}>
                         {day.coming ? (
                           <Check className="w-5 h-5 text-white" />
                         ) : (
-                          <X className="w-5 h-5 text-slate-400" />
+                          <Unlock className="w-5 h-5 text-white" />
                         )}
                       </div>
                       <div className="text-left">
-                        <p className="text-sm font-semibold text-slate-900">{day.dayName}</p>
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-semibold text-slate-900">{day.dayName}</p>
+                          {day.isToday && !day.isPast && (
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-blue-600 bg-blue-100 px-1.5 py-0.5 rounded">Today</span>
+                          )}
+                        </div>
                         <p className="text-xs text-slate-400">{format(new Date(day.date + 'T12:00:00'), 'MMM d')}</p>
                       </div>
                     </div>
-                    <span className={`text-xs font-bold px-3 py-1.5 rounded-full transition-colors duration-200 ${
-                      day.isPast
-                        ? (day.coming ? 'bg-green-100 text-green-600' : 'bg-slate-100 text-slate-400')
-                        : day.coming
-                          ? 'bg-green-500 text-white'
-                          : 'bg-slate-200 text-slate-500'
-                    }`}>
-                      {day.coming ? 'Coming' : 'Not coming'}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className={`text-xs font-bold px-3 py-1.5 rounded-full transition-colors duration-200 ${
+                        day.isPast
+                          ? (day.coming ? 'bg-green-100 text-green-600' : 'bg-slate-100 text-slate-400')
+                          : day.coming
+                            ? 'bg-green-500 text-white'
+                            : 'bg-amber-400 text-white'
+                      }`}>
+                        {day.coming ? 'Coming' : day.isPast ? 'Released' : 'Released'}
+                      </span>
+                    </div>
                   </motion.button>
                 ))}
               </div>
             )}
           </motion.div>
         </AnimatePresence>
+      </Card>
+
+      {/* Explanation card */}
+      <Card padding="md">
+        <div className="flex items-start gap-3">
+          <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center flex-shrink-0 mt-0.5">
+            <Unlock className="w-4 h-4 text-amber-600" />
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-slate-700">How releasing works</p>
+            <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+              When you release your spot for a day, it becomes available for others.
+              If someone is on the waitlist, they'll automatically get your spot.
+              You can reclaim it anytime as long as no one else has taken it.
+            </p>
+          </div>
+        </div>
       </Card>
     </div>
   )

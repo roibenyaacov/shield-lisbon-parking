@@ -3,9 +3,10 @@ export const dynamic = 'force-dynamic'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { Shell } from '@/components/layout/Shell'
-import { MySpotManager } from '@/components/dashboard/MySpotManager'
-import { ArrowLeft } from 'lucide-react'
-import Link from 'next/link'
+import { MyWeek } from '@/components/dashboard/MyWeek'
+import { SignOutButton } from '@/components/dashboard/SignOutButton'
+import { FixedSpotBadge } from '@/components/dashboard/FixedSpotBadge'
+import { ReleaseManager } from '@/components/dashboard/ReleaseManager'
 import type { Profile, ParkingSpot } from '@/types/db'
 
 export default async function MySpotPage() {
@@ -35,24 +36,30 @@ export default async function MySpotPage() {
   }
 
   return (
-    <Shell>
+    <Shell showAdminLink={profile.role === 'admin'}>
       <div className="space-y-5">
-        <div className="flex items-center gap-3">
-          <Link
-            href="/dashboard"
-            className="w-9 h-9 rounded-xl bg-slate-100 flex items-center justify-center active:scale-[0.95] transition-all duration-200 touch-manipulation haptic-feedback"
-          >
-            <ArrowLeft className="w-4 h-4 text-slate-600" />
-          </Link>
+        <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-slate-900">My Spot</h1>
-            <p className="text-sm text-slate-500">Manage your fixed parking spot #{fixedSpot.label}</p>
+            <h1 className="text-2xl font-bold text-slate-900">
+              Hey, {profile.full_name?.split(' ')[0]} 👋
+            </h1>
           </div>
+          <SignOutButton />
         </div>
-        <MySpotManager
+
+        <FixedSpotBadge spotLabel={fixedSpot.label} />
+
+        <MyWeek
           userId={user.id}
-          userName={profile.full_name ?? 'User'}
-          spot={fixedSpot}
+          fixedSpotId={fixedSpot.id}
+          fixedSpotLabel={fixedSpot.label}
+          userName={profile.full_name ?? undefined}
+        />
+
+        <ReleaseManager
+          userId={user.id}
+          spotId={fixedSpot.id}
+          spotLabel={fixedSpot.label}
         />
       </div>
     </Shell>

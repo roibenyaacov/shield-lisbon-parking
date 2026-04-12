@@ -1,4 +1,4 @@
-# Shield Lisbon Parking — App Logic
+# Shield Lisbon Parking �?? App Logic
 
 ## Overview
 
@@ -10,16 +10,16 @@ Shield Lisbon Parking is a weekly parking spot management system for the Shield 
 
 | Spot | Priority | Notes |
 |------|----------|-------|
-| #1 | Motorcycle | Reassigned to cars if no motorcycles apply |
-| #2 | General | — |
+| #1 | General | — |
+| #2 | Motorcycle | Reassigned to cars if no motorcycles apply |
 | #37 | EV | Electric vehicle charging |
 | #38 | EV | Electric vehicle charging |
-| #39 | General | **Fixed** — Raíssa Ramos (`raissa.ramos@shieldfc.com`) |
-| #40 | General | — |
-| #41 | General | — |
-| #48 | General | — |
-| #49 | General | **Fixed** — Rita Vaz (`rita.vaz@shieldfc.com`) |
-| #51 | General | — |
+| #39 | General | �?? |
+| #40 | General | **Fixed** �?? Raíssa Ramos (`raissa.ramos@shieldfc.com`) |
+| #41 | General | �?? |
+| #48 | General | �?? |
+| #49 | General | — |
+| #51 | General | �?? |
 
 Fixed spot users are auto-assigned upon signup via a database trigger that matches their email.
 
@@ -42,30 +42,30 @@ Each team has a designated "priority day" where they get first access to spots:
 ## Weekly Flow
 
 ```
-Wed 19:00 ─── Registration Opens ──► Thu all day ──► Fri 08:00 ─── Registration Closes
-                                                          │
-                                                          ▼
+Wed 19:00 �??�??�?? Registration Opens �??�??�?� Thu all day �??�??�?� Fri 08:00 �??�??�?? Registration Closes
+                                                          �??
+                                                          �?�
                                                    Allocation Algorithm Runs
                                                    (Vercel Cron Job)
-                                                          │
-                                                          ▼
+                                                          �??
+                                                          �?�
                                                    Emails Sent to All Users
-                                                          │
-                                                          ▼
-                                              Mon-Fri ─── Parking Week Begins
+                                                          �??
+                                                          �?�
+                                              Mon-Fri �??�??�?? Parking Week Begins
 ```
 
-### Registration (Wednesday 19:00 → Friday 08:00, Lisbon time)
+### Registration (Wednesday 19:00 �?? Friday 08:00, Lisbon time)
 
 - Users select which days they need parking next week (max 3 days)
 - Users can edit their request while registration is open
-- After Friday 08:00, registration locks — no more edits
+- After Friday 08:00, registration locks �?? no more edits
 
 ### Allocation (Friday 08:00, automatic via Vercel Cron)
 
 The fair allocation algorithm runs and assigns spots. See "Allocation Algorithm" below.
 
-### Post-Allocation (Friday 08:00 → Wednesday 19:00)
+### Post-Allocation (Friday 08:00 �?? Wednesday 19:00)
 
 - Dashboard shows "Registration Closed" with a lock icon
 - Users can view their allocated spots in the weekly view
@@ -77,22 +77,22 @@ The fair allocation algorithm runs and assigns spots. See "Allocation Algorithm"
 
 **File:** `lib/allocation.ts`
 
-For each day of the week (Monday–Friday):
+For each day of the week (Monday�??Friday):
 
 ### Pre-step: Fixed Spots
-Spots #39 and #49 are assigned to their fixed users (unless they released the day via the My Spot toggle).
+Spot #40 is assigned to its fixed user (unless they released the day via the My Spot toggle).
 
-### Pass 1 — Team Day Priority
+### Pass 1 �?? Team Day Priority
 Users whose team matches the day's priority get their **1st spot** assigned. Sorted by registration timestamp (FCFS within the team).
 
-### Pass 2 — FCFS for Everyone Else
+### Pass 2 �?? FCFS for Everyone Else
 Remaining users who requested that day get their **1st spot** by first-come-first-served. Team day users who weren't assigned in Pass 1 are also included here.
 
-### Pass 3a — 2nd Day
+### Pass 3a �?? 2nd Day
 Users who have exactly 1 day assigned get a **2nd day**, prioritizing team day users first.
 
-### Pass 3b — 3rd Day (Equity Check)
-A 3rd day is only assigned if **no user in the request pool has 0 days**. This ensures fair distribution — nobody gets 3 days while someone else has 0.
+### Pass 3b �?? 3rd Day (Equity Check)
+A 3rd day is only assigned if **no user in the request pool has 0 days**. This ensures fair distribution �?? nobody gets 3 days while someone else has 0.
 
 ### Spot Selection Logic (`pickSpot`)
 - EV users get EV spots (#37, #38) first
@@ -126,22 +126,22 @@ Maximum **3 days per user per week**.
 ### Forgot Password
 1. User enters email on `/forgot-password`
 2. Reset link sent via Supabase
-3. User clicks link → `/reset-password`
+3. User clicks link �?? `/reset-password`
 4. User sets new password
 
 ### Route Protection (`proxy.ts`)
 - **Public routes:** `/login`, `/signup`, `/forgot-password`, `/reset-password`, `/api/auth/callback`
-- Unauthenticated users on protected routes → redirect to `/login`
-- Authenticated users on login/signup → redirect to `/dashboard`
-- Authenticated users without completed profile → redirect to `/profile-setup`
+- Unauthenticated users on protected routes �?? redirect to `/login`
+- Authenticated users on login/signup �?? redirect to `/dashboard`
+- Authenticated users without completed profile �?? redirect to `/profile-setup`
 
 ---
 
 ## Pages
 
-### `/dashboard` — Main Dashboard (Regular Users)
+### `/dashboard` �?? Main Dashboard (Regular Users)
 - **Hero Card:** Shows today's (or next upcoming) parking spot in a large card with spot number, date, and checkmark
-- **Week View:** Lists Monday–Friday with spot numbers, waitlist status, or "No spot" per day
+- **Week View:** Lists Monday�??Friday with spot numbers, waitlist status, or "No spot" per day
 - **Expandable Grid:** Tap any day to see a 4-column grid of all 10 spots (available in green, taken in gray, yours in blue)
 - **Week Navigation:** Arrows to browse This Week / Next Week (up to 4 weeks ahead)
 - **Request Form:** Below the week view, shows one of three states:
@@ -150,7 +150,7 @@ Maximum **3 days per user per week**.
   - *Closed:* Lock icon + "Allocations have been published"
 - Fixed spot users are **redirected to `/my-spot`**
 
-### `/my-spot` — Fixed Spot Users (Raíssa & Rita)
+### `/my-spot` — Fixed Spot User (Raíssa)
 - Shows their assigned spot number and label
 - **Daily Toggle:** For each day, tap to switch between "Coming" and "Not coming"
 - **Week Navigation:** Browse current week and up to 4 weeks ahead
@@ -158,20 +158,20 @@ Maximum **3 days per user per week**.
 - Releasing a day removes their allocation and promotes the first waitlist user
 - Reclaiming a day re-inserts their allocation
 
-### `/login` — Sign In
+### `/login` �?? Sign In
 - Email + password form with "Forgot password?" link
 
-### `/signup` — Create Account
+### `/signup` �?? Create Account
 - Multi-field form: email, password, full name, team, vehicle type
 - OTP verification step after submission
 
-### `/forgot-password` — Request Password Reset
+### `/forgot-password` �?? Request Password Reset
 - Email input, sends reset link
 
-### `/reset-password` — Set New Password
+### `/reset-password` �?? Set New Password
 - New password + confirmation, redirects to dashboard
 
-### `/profile-setup` — Complete Profile
+### `/profile-setup` �?? Complete Profile
 - Team and vehicle type selection (shown if profile is incomplete after auth)
 
 ---
@@ -233,19 +233,19 @@ All emails use a consistent template with Shield branding (dark gradient header,
 | Column | Type | Notes |
 |--------|------|-------|
 | id | uuid (PK) | References `auth.users` |
-| full_name | text | — |
-| email | text | — |
+| full_name | text | �?? |
+| email | text | �?? |
 | team | team_enum | cs, cloudops, pm, sm, marketing, data_sources, devops, app_team |
 | vehicle_type | vehicle_type_enum | car, electric, motorcycle |
 | role | user_role | admin, user (default: user) |
 | is_active | boolean | default: true |
-| created_at | timestamptz | — |
-| updated_at | timestamptz | — |
+| created_at | timestamptz | �?? |
+| updated_at | timestamptz | �?? |
 
 #### `parking_spots`
 | Column | Type | Notes |
 |--------|------|-------|
-| id | serial (PK) | — |
+| id | serial (PK) | �?? |
 | label | text | Spot number displayed to users |
 | priority | spot_priority_enum | ev, motorcycle, general |
 | is_active | boolean | default: true |
@@ -254,47 +254,46 @@ All emails use a consistent template with Shield branding (dark gradient header,
 #### `weekly_requests`
 | Column | Type | Notes |
 |--------|------|-------|
-| id | uuid (PK) | — |
-| user_id | uuid (FK) | — |
+| id | uuid (PK) | �?? |
+| user_id | uuid (FK) | �?? |
 | week_start | date | Monday of the requested week |
-| mon–fri | boolean | One column per day |
+| mon�??fri | boolean | One column per day |
 | created_at | timestamptz | Used for FCFS ordering |
 | **Unique** | | `(user_id, week_start)` |
 
 #### `weekly_allocations`
 | Column | Type | Notes |
 |--------|------|-------|
-| id | uuid (PK) | — |
-| user_id | uuid (FK) | — |
-| spot_id | integer (FK) | — |
+| id | uuid (PK) | �?? |
+| user_id | uuid (FK) | �?? |
+| spot_id | integer (FK) | �?? |
 | date | date | Specific day |
 | pass_number | integer | 0=fixed, 1=team day, 2=FCFS, 3=fill-up, 4=waitlist promotion |
-| created_at | timestamptz | — |
-| **Unique** | | `(spot_id, date)` — one user per spot per day |
+| created_at | timestamptz | �?? |
+| **Unique** | | `(spot_id, date)` �?? one user per spot per day |
 
 #### `waitlist`
 | Column | Type | Notes |
 |--------|------|-------|
-| id | uuid (PK) | — |
-| user_id | uuid (FK) | — |
-| date | date | — |
+| id | uuid (PK) | �?? |
+| user_id | uuid (FK) | �?? |
+| date | date | �?? |
 | created_at | timestamptz | FIFO ordering |
 | **Unique** | | `(user_id, date)` |
 
 #### `spot_releases`
 | Column | Type | Notes |
 |--------|------|-------|
-| id | uuid (PK) | — |
-| user_id | uuid (FK) | — |
-| spot_id | integer (FK) | — |
-| week_start | date | — |
-| created_at | timestamptz | — |
+| id | uuid (PK) | �?? |
+| user_id | uuid (FK) | �?? |
+| spot_id | integer (FK) | �?? |
+| week_start | date | �?? |
+| created_at | timestamptz | �?? |
 
 ### Database Trigger: `handle_new_user`
 Fires on `INSERT` to `auth.users`:
 1. Creates a profile row with `full_name` and `email` from user metadata
-2. If email is `raissa.ramos@shieldfc.com` → sets `fixed_user_id` on spot #39
-3. If email is `rita.vaz@shieldfc.com` → sets `fixed_user_id` on spot #49
+2. If email is `raissa.ramos@shieldfc.com` �?? sets `fixed_user_id` on spot #40
 
 ### Row Level Security (RLS)
 - All tables have RLS enabled
@@ -327,56 +326,56 @@ Supabase Realtime is enabled for `weekly_allocations` and `waitlist` tables, pow
 ## Key Files Reference
 
 ```
-├── app/
-│   ├── layout.tsx              # Root layout
-│   ├── page.tsx                # Redirect to /dashboard
-│   ├── dashboard/page.tsx      # Main user dashboard
-│   ├── my-spot/page.tsx        # Fixed spot user page
-│   ├── request/page.tsx        # Standalone request form
-│   ├── login/page.tsx          # Sign in
-│   ├── signup/page.tsx         # Create account
-│   ├── forgot-password/page.tsx
-│   ├── reset-password/page.tsx
-│   ├── profile-setup/page.tsx
-│   └── api/
-│       ├── allocate/route.ts   # Allocation endpoint (GET/POST)
-│       ├── release/route.ts    # Release/reclaim spots (POST)
-│       └── auth/callback/route.ts
-├── components/
-│   ├── dashboard/
-│   │   ├── MyWeek.tsx          # User's weekly parking view
-│   │   ├── MySpotManager.tsx   # Fixed spot toggle UI
-│   │   ├── SignOutButton.tsx
-│   │   ├── WeeklyGrid.tsx      # Admin grid (unused)
-│   │   └── SpotCell.tsx        # Grid cell component
-│   ├── forms/
-│   │   ├── LoginForm.tsx
-│   │   ├── SignupForm.tsx      # Multi-step with OTP
-│   │   ├── ProfileForm.tsx
-│   │   └── RequestForm.tsx     # Day selection + countdown
-│   ├── layout/
-│   │   ├── Shell.tsx
-│   │   └── Navbar.tsx
-│   └── ui/
-│       ├── Button.tsx
-│       ├── Card.tsx
-│       └── Input.tsx
-├── lib/
-│   ├── allocation.ts           # Fair allocation algorithm
-│   ├── resend.ts               # Email templates + sending
-│   ├── constants.ts            # Teams, days, config
-│   ├── utils.ts                # cn() helper
-│   └── supabase/
-│       ├── client.ts           # Browser client
-│       └── server.ts           # Server + service role clients
-├── types/
-│   └── db.ts                   # All TypeScript types
-├── supabase/
-│   └── migrations/
-│       └── 001_initial_schema.sql
-├── proxy.ts                    # Route protection middleware
-├── vercel.json                 # Cron job config
-└── .env.local                  # Environment variables (not in git)
+�??�??�?? app/
+�??   �??�??�?? layout.tsx              # Root layout
+�??   �??�??�?? page.tsx                # Redirect to /dashboard
+�??   �??�??�?? dashboard/page.tsx      # Main user dashboard
+�??   �??�??�?? my-spot/page.tsx        # Fixed spot user page
+�??   �??�??�?? request/page.tsx        # Standalone request form
+�??   �??�??�?? login/page.tsx          # Sign in
+�??   �??�??�?? signup/page.tsx         # Create account
+�??   �??�??�?? forgot-password/page.tsx
+�??   �??�??�?? reset-password/page.tsx
+�??   �??�??�?? profile-setup/page.tsx
+�??   �??�??�?? api/
+�??       �??�??�?? allocate/route.ts   # Allocation endpoint (GET/POST)
+�??       �??�??�?? release/route.ts    # Release/reclaim spots (POST)
+�??       �??�??�?? auth/callback/route.ts
+�??�??�?? components/
+�??   �??�??�?? dashboard/
+�??   �??   �??�??�?? MyWeek.tsx          # User's weekly parking view
+�??   �??   �??�??�?? MySpotManager.tsx   # Fixed spot toggle UI
+�??   �??   �??�??�?? SignOutButton.tsx
+�??   �??   �??�??�?? WeeklyGrid.tsx      # Admin grid (unused)
+�??   �??   �??�??�?? SpotCell.tsx        # Grid cell component
+�??   �??�??�?? forms/
+�??   �??   �??�??�?? LoginForm.tsx
+�??   �??   �??�??�?? SignupForm.tsx      # Multi-step with OTP
+�??   �??   �??�??�?? ProfileForm.tsx
+�??   �??   �??�??�?? RequestForm.tsx     # Day selection + countdown
+�??   �??�??�?? layout/
+�??   �??   �??�??�?? Shell.tsx
+�??   �??   �??�??�?? Navbar.tsx
+�??   �??�??�?? ui/
+�??       �??�??�?? Button.tsx
+�??       �??�??�?? Card.tsx
+�??       �??�??�?? Input.tsx
+�??�??�?? lib/
+�??   �??�??�?? allocation.ts           # Fair allocation algorithm
+�??   �??�??�?? resend.ts               # Email templates + sending
+�??   �??�??�?? constants.ts            # Teams, days, config
+�??   �??�??�?? utils.ts                # cn() helper
+�??   �??�??�?? supabase/
+�??       �??�??�?? client.ts           # Browser client
+�??       �??�??�?? server.ts           # Server + service role clients
+�??�??�?? types/
+�??   �??�??�?? db.ts                   # All TypeScript types
+�??�??�?? supabase/
+�??   �??�??�?? migrations/
+�??       �??�??�?? 001_initial_schema.sql
+�??�??�?? proxy.ts                    # Route protection middleware
+�??�??�?? vercel.json                 # Cron job config
+�??�??�?? .env.local                  # Environment variables (not in git)
 ```
 
 ---
