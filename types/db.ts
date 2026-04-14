@@ -15,6 +15,7 @@ export type Team =
   | 'data_sources'
   | 'devops'
   | 'app_team'
+  | 'hr'
 
 export type VehicleType = 'car' | 'electric' | 'motorcycle'
 

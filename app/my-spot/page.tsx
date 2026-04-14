@@ -5,8 +5,6 @@ import { createClient } from '@/lib/supabase/server'
 import { Shell } from '@/components/layout/Shell'
 import { MyWeek } from '@/components/dashboard/MyWeek'
 import { SignOutButton } from '@/components/dashboard/SignOutButton'
-import { FixedSpotBadge } from '@/components/dashboard/FixedSpotBadge'
-import { ReleaseManager } from '@/components/dashboard/ReleaseManager'
 import type { Profile, ParkingSpot } from '@/types/db'
 
 export default async function MySpotPage() {
@@ -47,19 +45,11 @@ export default async function MySpotPage() {
           <SignOutButton />
         </div>
 
-        <FixedSpotBadge spotLabel={fixedSpot.label} />
-
         <MyWeek
           userId={user.id}
           fixedSpotId={fixedSpot.id}
           fixedSpotLabel={fixedSpot.label}
           userName={profile.full_name ?? undefined}
-        />
-
-        <ReleaseManager
-          userId={user.id}
-          spotId={fixedSpot.id}
-          spotLabel={fixedSpot.label}
         />
       </div>
     </Shell>

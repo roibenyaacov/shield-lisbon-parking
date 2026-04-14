@@ -1,7 +1,7 @@
 import { Resend } from 'resend'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Profile, ParkingSpot } from '@/types/db'
-import { format } from 'date-fns'
+import { format, nextMonday } from 'date-fns'
 
 let _resend: Resend | null = null
 
@@ -237,6 +237,78 @@ export async function sendAllocationEmails(
     }
   }
 }
+
+function registrationReminderHtml(name: string, weekLabel: string): string {
+  return emailWrapper(`
+    <h2 style="margin:0 0 4px;color:#1a1a1a;font-size:22px;font-weight:700;text-align:center;">Parking Registration Is Open</h2>
+    <p style="margin:0 0 24px;color:#8E8E93;font-size:14px;text-align:center;">Week of ${weekLabel}</p>
+
+    <p style="margin:0 0 20px;color:#3C3C43;font-size:15px;">Hi ${name},</p>
+
+    <p style="margin:0 0 20px;color:#8E8E93;font-size:14px;line-height:1.6;">
+      The parking registration window is now open. Select the days you need parking for next week.
+    </p>
+
+    <div style="background:#F0F0FF;border:2px solid #D4D4FF;border-radius:16px;padding:20px 24px;margin:0 0 20px;">
+      <table style="width:100%;border-collapse:collapse;">
+        <tr>
+          <td style="padding:8px 0;color:#6366F1;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">Opens</td>
+          <td style="padding:8px 0;color:#1a1a1a;font-size:14px;font-weight:600;text-align:right;">Wednesday, 19:00</td>
+        </tr>
+        <tr>
+          <td style="padding:8px 0;color:#6366F1;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;border-top:1px solid #E0E0FF;">Closes</td>
+          <td style="padding:8px 0;color:#1a1a1a;font-size:14px;font-weight:600;text-align:right;border-top:1px solid #E0E0FF;">Friday, 08:00</td>
+        </tr>
+        <tr>
+          <td style="padding:8px 0;color:#6366F1;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;border-top:1px solid #E0E0FF;">Max Days</td>
+          <td style="padding:8px 0;color:#1a1a1a;font-size:14px;font-weight:600;text-align:right;border-top:1px solid #E0E0FF;">4 per week</td>
+        </tr>
+      </table>
+    </div>
+
+    <a href="${BASE_URL}/dashboard" style="display:block;background:#2563EB;color:#FFFFFF;text-decoration:none;text-align:center;padding:14px 24px;border-radius:14px;font-size:15px;font-weight:600;margin:0 0 20px;">Register Now</a>
+
+    <p style="margin:0;color:#AEAEB2;font-size:12px;text-align:center;line-height:1.5;">
+      Allocations are published every Friday at 08:00 (Lisbon time).
+    </p>
+  `)
+}
+
+export async function sendRegistrationReminders(
+  supabase: SupabaseClient
+): Promise<{ sent: number }> {
+  const { data: profiles } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('is_active', true)
+
+  if (!profiles || profiles.length === 0) return { sent: 0 }
+
+  const weekStart = nextMonday(new Date())
+  const weekLabel = format(weekStart, 'MMMM d, yyyy')
+
+  let sent = 0
+  for (const profile of profiles as Profile[]) {
+    if (!profile.email) continue
+    try {
+      await getResend().emails.send({
+        from: FROM_EMAIL,
+        to: profile.email,
+        subject: `🅿️ Parking Registration Open — Week of ${format(weekStart, 'MMM d')}`,
+        html: registrationReminderHtml(
+          profile.full_name ?? 'Team Member',
+          weekLabel
+        ),
+      })
+      sent++
+    } catch (err) {
+      console.error(`Failed to send reminder to ${profile.email}:`, err)
+    }
+  }
+  return { sent }
+}
+
+export { registrationReminderHtml, weeklyAllocationHtml, waitlistPromotionHtml }
 
 export async function sendWaitlistPromotionEmail(
   email: string,

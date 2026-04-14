@@ -9,6 +9,7 @@ import { format, addDays, startOfWeek, addWeeks, isBefore, startOfDay, isToday }
 import { DAY_LABELS, DAY_NAMES } from '@/lib/constants'
 import toast from 'react-hot-toast'
 import type { ParkingSpot, Profile, WeeklyAllocation } from '@/types/db'
+import { ReleaseManager } from '@/components/dashboard/ReleaseManager'
 
 interface MyWeekProps {
   userId: string
@@ -271,6 +272,15 @@ export function MyWeek({ userId, fixedSpotId, fixedSpotLabel, userName }: MyWeek
               </motion.div>
               <p className="text-slate-500 text-sm">Your Parking Spot</p>
               <p className="text-5xl font-bold text-slate-900 mt-1">{activeDay.spotLabel}</p>
+              {fixedSpotId != null && fixedSpotLabel != null && (
+                <div className="mt-5 max-w-xs mx-auto">
+                  <ReleaseManager
+                    userId={userId}
+                    spotId={fixedSpotId}
+                    spotLabel={fixedSpotLabel}
+                  />
+                </div>
+              )}
               {activeDay.spotPriority === 'ev' && (
                 <div className="flex items-center justify-center gap-1 mt-2 text-green-600">
                   <Zap className="w-4 h-4" />

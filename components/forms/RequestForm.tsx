@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
-import { DAY_KEYS, DAY_LABELS, DAY_NAMES, LISBON_TIMEZONE, REQUEST_OPEN_DAY, REQUEST_OPEN_HOUR, TEAM_DAY_MAP, TEAM_LABELS } from '@/lib/constants'
+import { DAY_KEYS, DAY_LABELS, DAY_NAMES, LISBON_TIMEZONE, REQUEST_OPEN_DAY, REQUEST_OPEN_HOUR, TEAM_DAY_MAP, TEAM_LABELS, MAX_DAYS_PER_USER } from '@/lib/constants'
 import { toZonedTime } from 'date-fns-tz'
 import { addDays, nextMonday, format, differenceInSeconds } from 'date-fns'
 import { Check, Clock, CalendarDays, CheckCircle2, Lock } from 'lucide-react'
@@ -140,8 +140,8 @@ export function RequestForm({ userId, userTeam, existingRequest }: RequestFormPr
       setError('Please select at least one day.')
       return
     }
-    if (selectedCount > 3) {
-      setError('Maximum 3 days per week.')
+    if (selectedCount > MAX_DAYS_PER_USER) {
+      setError(`Maximum ${MAX_DAYS_PER_USER} days per week.`)
       return
     }
 
@@ -291,7 +291,7 @@ export function RequestForm({ userId, userTeam, existingRequest }: RequestFormPr
             <h3 className="font-bold text-slate-900">
               Week of {format(weekStart, 'MMM d, yyyy')}
             </h3>
-            <p className="text-xs text-slate-500">Select the days you need parking (max 3)</p>
+            <p className="text-xs text-slate-500">Select the days you need parking (max {MAX_DAYS_PER_USER})</p>
           </div>
         </div>
 
@@ -368,7 +368,7 @@ export function RequestForm({ userId, userTeam, existingRequest }: RequestFormPr
         </AnimatePresence>
 
         <Button type="submit" isLoading={loading} fullWidth size="lg">
-          Submit Request ({selectedCount}/3 days)
+          Submit Request ({selectedCount}/{MAX_DAYS_PER_USER} days)
         </Button>
       </form>
     </Card>

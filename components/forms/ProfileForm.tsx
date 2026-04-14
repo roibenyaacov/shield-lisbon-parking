@@ -81,23 +81,26 @@ export function ProfileForm({ userId, initialName }: { userId: string; initialNa
           </span>
         </label>
         <div className="grid grid-cols-2 gap-2">
-          {Object.entries(TEAM_LABELS).map(([value, label]) => (
-            <button
-              key={value}
-              type="button"
-              onClick={() => {
-                if (navigator.vibrate) navigator.vibrate(10)
-                setTeam(value as Team)
-              }}
-              className={`px-3 py-2.5 rounded-xl border-2 text-sm font-medium transition-all duration-200 active:scale-[0.98] touch-manipulation ${
-                team === value
-                  ? 'border-blue-600 bg-blue-50 text-blue-700 shadow-lg shadow-blue-600/20'
-                  : 'border-slate-200 text-slate-600 hover:border-slate-300 hover:shadow-md'
-              }`}
-            >
-              {label}
-            </button>
-          ))}
+          {Object.entries(TEAM_LABELS).map(([value, label], index, entries) => {
+            const isLastOdd = index === entries.length - 1 && entries.length % 2 === 1
+            return (
+              <button
+                key={value}
+                type="button"
+                onClick={() => {
+                  if (navigator.vibrate) navigator.vibrate(10)
+                  setTeam(value as Team)
+                }}
+                className={`px-3 py-2.5 rounded-xl border-2 text-sm font-medium transition-all duration-200 active:scale-[0.98] touch-manipulation ${
+                  team === value
+                    ? 'border-blue-600 bg-blue-50 text-blue-700 shadow-lg shadow-blue-600/20'
+                    : 'border-slate-200 text-slate-600 hover:border-slate-300 hover:shadow-md'
+                } ${isLastOdd ? 'col-span-2 justify-self-center w-[calc((100%-0.5rem)/2)]' : ''}`}
+              >
+                {label}
+              </button>
+            )
+          })}
         </div>
       </div>
 

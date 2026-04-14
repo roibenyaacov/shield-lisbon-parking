@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { toZonedTime } from 'date-fns-tz'
 import { nextMonday, format } from 'date-fns'
-import { LISBON_TIMEZONE, REQUEST_OPEN_DAY, REQUEST_OPEN_HOUR } from '@/lib/constants'
+import { LISBON_TIMEZONE, REQUEST_OPEN_DAY, REQUEST_OPEN_HOUR, MAX_DAYS_PER_USER } from '@/lib/constants'
 
 // Mirrors the client-side getFormState() logic but runs on the server
 // so it cannot be bypassed by editing the browser JS.
@@ -53,8 +53,8 @@ export async function POST(request: NextRequest) {
     if (selectedCount === 0) {
       return NextResponse.json({ error: 'Select at least one day.' }, { status: 400 })
     }
-    if (selectedCount > 3) {
-      return NextResponse.json({ error: 'Maximum 3 days per week.' }, { status: 400 })
+    if (selectedCount > MAX_DAYS_PER_USER) {
+      return NextResponse.json({ error: `Maximum ${MAX_DAYS_PER_USER} days per week.` }, { status: 400 })
     }
 
     // ── Upsert via service client (bypasses RLS for the write) ────────
