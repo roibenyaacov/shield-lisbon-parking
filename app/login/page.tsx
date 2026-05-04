@@ -17,7 +17,7 @@ export default async function LoginPage({
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-orange-50/20 flex items-center justify-center px-4 ios-safe-top ios-safe-bottom" suppressHydrationWarning>
       <div className="w-full max-w-sm" suppressHydrationWarning>
         <div className="text-center mb-8" suppressHydrationWarning>
-          <img src="/logo.png" alt="Shield Parking" className="h-10 w-auto mx-auto mb-5" />
+          <img src="/logo.png" alt="Shield Parking" className="h-11 sm:h-10 w-auto mx-auto mb-5" />
           <h1 className="text-3xl font-bold text-slate-900" suppressHydrationWarning>Welcome back</h1>
           <p className="text-slate-500 text-sm mt-1.5" suppressHydrationWarning>Sign in to manage your parking</p>
         </div>
