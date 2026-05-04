@@ -30,7 +30,7 @@ export async function POST(request: Request) {
     // Fetch spot and validate it is claimable
     const { data: spot } = await serviceClient
       .from('parking_spots')
-      .select('id, is_active, fixed_user_id')
+      .select('id, label, is_active, fixed_user_id, reserved_name')
       .eq('id', spot_id)
       .maybeSingle()
 
@@ -42,7 +42,15 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Spot is not available' }, { status: 409 })
     }
 
+    const isSpot40 = spot.label === '40'
+    const isRaissa = user.email?.toLowerCase() === 'raissa.ramos@shieldfc.com'
+    const isReservedByFallback = !!spot.reserved_name || isSpot40
+
     if (spot.fixed_user_id && spot.fixed_user_id !== user.id) {
+      return NextResponse.json({ error: 'Spot is reserved' }, { status: 409 })
+    }
+
+    if (!spot.fixed_user_id && isReservedByFallback && !(isSpot40 && isRaissa)) {
       return NextResponse.json({ error: 'Spot is reserved' }, { status: 409 })
     }
 

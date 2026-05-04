@@ -128,14 +128,15 @@ export function MyWeek({ userId, fixedSpotId, fixedSpotLabel, userName }: MyWeek
     setDaySpots(spots.map(s => {
       const alloc = allocs.find(a => a.spot_id === s.id)
       const isOwnerFixedSpot = fixedSpotId != null && fixedSpotId === s.id
-      const isReserved = !!s.fixed_user_id || !!s.reserved_name
+      const isSpot40ReservedFallback = s.label === '40'
+      const isReserved = !!s.fixed_user_id || !!s.reserved_name || isSpot40ReservedFallback
       const isOccupiedByFixedOwner = isReserved && (!alloc || alloc?.user_id === s.fixed_user_id)
       return {
         id: s.id,
         label: s.label,
         priority: s.priority,
         isFixed: isReserved,
-        fixedOwnerName: s.fixed_user?.full_name ?? s.reserved_name ?? null,
+        fixedOwnerName: s.fixed_user?.full_name ?? s.reserved_name ?? (isSpot40ReservedFallback ? 'Raissa Ramos' : null),
         occupantName: alloc?.user?.full_name ?? null,
         isCurrentUser: alloc?.user_id === userId,
         isAvailable: !alloc,
@@ -279,6 +280,24 @@ export function MyWeek({ userId, fixedSpotId, fixedSpotLabel, userName }: MyWeek
                     spotId={fixedSpotId}
                     spotLabel={fixedSpotLabel}
                   />
+                </div>
+              )}
+              {fixedSpotId == null && activeDay.spotId != null && !activeDay.isPast && (
+                <div className="mt-5 max-w-xs mx-auto">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (navigator.vibrate) navigator.vibrate(10)
+                      setConfirmAction({
+                        spotId: activeDay.spotId!,
+                        date: activeDay.date,
+                        type: 'release',
+                      })
+                    }}
+                    className="w-full py-3.5 rounded-xl bg-blue-600 text-white text-sm font-semibold shadow-md shadow-blue-600/25 active:scale-[0.98] transition-all touch-manipulation hover:bg-blue-700"
+                  >
+                    Release Parking
+                  </button>
                 </div>
               )}
               {activeDay.spotPriority === 'ev' && (

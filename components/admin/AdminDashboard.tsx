@@ -90,13 +90,14 @@ export function AdminDashboard({ adminName }: AdminDashboardProps) {
 
       const slots: SlotInfo[] = allSpots.map(spot => {
         const alloc = dayAllocs.find(a => a.spot_id === spot.id)
-        const isReserved = !!spot.fixed_user_id || !!spot.reserved_name
+        const isSpot40ReservedFallback = spot.label === '40'
+        const isReserved = !!spot.fixed_user_id || !!spot.reserved_name || isSpot40ReservedFallback
         return {
           spotId: spot.id,
           spotLabel: spot.label,
           spotPriority: spot.priority,
           isFixed: isReserved,
-          fixedOwnerName: spot.fixed_user?.full_name ?? spot.reserved_name ?? null,
+          fixedOwnerName: spot.fixed_user?.full_name ?? spot.reserved_name ?? (isSpot40ReservedFallback ? 'Raissa Ramos' : null),
           isFixedAndOccupiedByOwner: isReserved && (!alloc || alloc?.user_id === spot.fixed_user_id),
           occupantName: alloc?.user?.full_name ?? null,
           occupantTeam: alloc?.user?.team ?? null,

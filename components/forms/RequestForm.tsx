@@ -6,7 +6,7 @@ import { Card } from '@/components/ui/Card'
 import { DAY_KEYS, DAY_LABELS, DAY_NAMES, LISBON_TIMEZONE, REQUEST_OPEN_DAY, REQUEST_OPEN_HOUR, TEAM_DAY_MAP, TEAM_LABELS, MAX_DAYS_PER_USER } from '@/lib/constants'
 import { toZonedTime } from 'date-fns-tz'
 import { addDays, nextMonday, format, differenceInSeconds } from 'date-fns'
-import { Check, Clock, CalendarDays, CheckCircle2, Lock } from 'lucide-react'
+import { Check, Clock, CalendarDays, CheckCircle2, Lock, Sparkles } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import type { Team, WeeklyRequest } from '@/types/db'
 
@@ -33,6 +33,8 @@ function getOpenTime(): Date {
 type FormState = 'not_open' | 'open' | 'closed'
 
 function getFormState(): FormState {
+  if (process.env.NEXT_PUBLIC_DEMO_MODE === 'true') return 'open'
+
   const now = toZonedTime(new Date(), LISBON_TIMEZONE)
   const day = now.getDay()
   const hour = now.getHours()
@@ -112,6 +114,7 @@ export function RequestForm({ userId, userTeam, existingRequest }: RequestFormPr
   })
   const [loading, setLoading] = useState(false)
   const [submitted, setSubmitted] = useState(!!existingRequest)
+  const [showCelebration, setShowCelebration] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [formState, setFormState] = useState<FormState>(getFormState())
 
@@ -165,8 +168,13 @@ export function RequestForm({ userId, userTeam, existingRequest }: RequestFormPr
       return
     }
 
-    setSubmitted(true)
+    if (navigator.vibrate) navigator.vibrate([10, 40, 10])
     setLoading(false)
+    setShowCelebration(true)
+    setTimeout(() => {
+      setShowCelebration(false)
+      setSubmitted(true)
+    }, 2000)
   }
 
   if (formState === 'closed') {
@@ -278,9 +286,9 @@ export function RequestForm({ userId, userTeam, existingRequest }: RequestFormPr
     )
   }
 
-  const selectedCount = Object.values(days).filter(Boolean).length
-
   return (
+    <>
+    <CelebrationOverlay show={showCelebration} weekStart={weekStart} days={days} />
     <Card padding="lg">
       <form onSubmit={handleSubmit} className="space-y-5">
         <div className="flex items-center gap-3">
@@ -368,9 +376,108 @@ export function RequestForm({ userId, userTeam, existingRequest }: RequestFormPr
         </AnimatePresence>
 
         <Button type="submit" isLoading={loading} fullWidth size="lg">
-          Submit Request ({selectedCount}/{MAX_DAYS_PER_USER} days)
+          Submit Request
         </Button>
       </form>
     </Card>
+    </>
+  )
+}
+
+function CelebrationOverlay({
+  show,
+  weekStart,
+  days,
+}: {
+  show: boolean
+  weekStart: Date
+  days: Record<string, boolean>
+}) {
+  const selectedDays = DAY_KEYS.filter((k) => days[k])
+  const palette = ['#fbbf24', '#34d399', '#60a5fa', '#f472b6', '#a78bfa', '#f87171']
+
+  return (
+    <AnimatePresence>
+      {show && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.25 }}
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-gradient-to-br from-blue-600/80 via-blue-700/80 to-slate-900/80 backdrop-blur-sm px-6"
+        >
+          {Array.from({ length: 28 }).map((_, i) => {
+            const angle = (i / 28) * Math.PI * 2
+            const distance = 180 + (i % 3) * 40
+            return (
+              <motion.div
+                key={i}
+                className="absolute w-2.5 h-2.5 rounded-full"
+                style={{ background: palette[i % palette.length] }}
+                initial={{ x: 0, y: 0, scale: 0, opacity: 0 }}
+                animate={{
+                  x: Math.cos(angle) * distance,
+                  y: Math.sin(angle) * distance,
+                  scale: [0, 1, 0.6, 0],
+                  opacity: [0, 1, 1, 0],
+                }}
+                transition={{ duration: 1.6, delay: 0.1 + (i % 6) * 0.04, ease: 'easeOut' }}
+              />
+            )
+          })}
+
+          <motion.div
+            initial={{ scale: 0.6, y: 20, opacity: 0 }}
+            animate={{ scale: 1, y: 0, opacity: 1 }}
+            exit={{ scale: 0.95, y: -10, opacity: 0 }}
+            transition={{ type: 'spring', stiffness: 240, damping: 22 }}
+            className="relative bg-white rounded-3xl px-8 py-9 text-center shadow-2xl max-w-xs w-full"
+          >
+            <motion.div
+              initial={{ scale: 0, rotate: -90 }}
+              animate={{ scale: [0, 1.25, 1], rotate: 0 }}
+              transition={{ delay: 0.15, duration: 0.6, times: [0, 0.6, 1] }}
+              className="w-20 h-20 mx-auto bg-gradient-to-br from-green-400 to-green-600 rounded-full flex items-center justify-center mb-4 shadow-lg shadow-green-500/40"
+            >
+              <Check className="w-10 h-10 text-white" strokeWidth={3.5} />
+            </motion.div>
+
+            <motion.div
+              initial={{ y: 10, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              transition={{ delay: 0.35 }}
+              className="flex items-center justify-center gap-1.5 mb-1"
+            >
+              <Sparkles className="w-4 h-4 text-amber-500" />
+              <h3 className="text-xl font-bold text-slate-900">Request Submitted!</h3>
+              <Sparkles className="w-4 h-4 text-amber-500" />
+            </motion.div>
+
+            <motion.p
+              initial={{ y: 8, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              transition={{ delay: 0.45 }}
+              className="text-xs text-slate-500 mb-3"
+            >
+              Week of {format(weekStart, 'MMM d, yyyy')}
+            </motion.p>
+
+            <div className="flex flex-wrap gap-1.5 justify-center">
+              {selectedDays.map((k, i) => (
+                <motion.span
+                  key={k}
+                  initial={{ scale: 0, y: 8 }}
+                  animate={{ scale: 1, y: 0 }}
+                  transition={{ delay: 0.5 + i * 0.07, type: 'spring', stiffness: 320, damping: 20 }}
+                  className="bg-blue-600 text-white text-[11px] font-semibold px-3 py-1 rounded-full"
+                >
+                  {DAY_LABELS[DAY_NAMES[DAY_KEYS.indexOf(k)]]}
+                </motion.span>
+              ))}
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   )
 }
