@@ -1,8 +1,10 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { runAllocation, saveAllocations } from '@/lib/allocation'
-import { nextMonday, addDays, format } from 'date-fns'
+import { nextMonday, format } from 'date-fns'
+import { toZonedTime } from 'date-fns-tz'
 import { sendAllocationEmails } from '@/lib/resend'
+import { LISBON_TIMEZONE, ALLOCATION_DAY, ALLOCATION_HOUR } from '@/lib/constants'
 import type { Profile } from '@/types/db'
 
 async function handleAllocate(request: NextRequest, weekStartOverride?: string) {
@@ -12,6 +14,25 @@ async function handleAllocate(request: NextRequest, weekStartOverride?: string) 
   // !!cronSecret ensures an empty/missing secret never accidentally
   // matches an empty Authorization header.
   const isCronAuthed = !!cronSecret && authHeader === `Bearer ${cronSecret}`
+
+  // ── DST-safe cron guard ────────────────────────────────────────────────
+  // Vercel cron runs in UTC and has no timezone support, so we schedule
+  // the cron at BOTH 07:00 UTC and 08:00 UTC each Friday.  Exactly one of
+  // those fires at 08:00 Lisbon time depending on whether DST is active.
+  // This guard ignores the run unless the current Lisbon time matches the
+  // target (Friday 08:00).  Admin manual triggers (non-cron auth) bypass
+  // this so they can re-run anytime.
+  if (isCronAuthed) {
+    const nowLisbon = toZonedTime(new Date(), LISBON_TIMEZONE)
+    if (nowLisbon.getDay() !== ALLOCATION_DAY || nowLisbon.getHours() !== ALLOCATION_HOUR) {
+      return NextResponse.json({
+        skipped: true,
+        reason:  'Not the target Lisbon hour for allocation',
+        lisbon_day:  nowLisbon.getDay(),
+        lisbon_hour: nowLisbon.getHours(),
+      })
+    }
+  }
 
   if (!isCronAuthed) {
     const userClient = await createClient()
@@ -48,17 +69,17 @@ async function handleAllocate(request: NextRequest, weekStartOverride?: string) 
 
   const serviceClient = await createServiceClient()
   const weekStart = weekStartOverride ?? format(nextMonday(new Date()), 'yyyy-MM-dd')
-  const weekEnd   = format(addDays(new Date(weekStart), 4), 'yyyy-MM-dd')
 
   // ── Idempotency guard ─────────────────────────────────────────────────
-  // If allocations already exist for this week (e.g. cron fired twice or
-  // an admin re-triggered), bail out early to prevent duplicate emails
-  // and non-deterministic re-allocation.
+  // Check specifically for the first day of the target week.  Checking
+  // the full range (gte weekStart, lte weekEnd) is too broad: a manually
+  // created allocation for any mid-week date would silently skip the
+  // entire allocation run.  Checking only weekStart means a stray
+  // mid-week row doesn't block the cron.
   const { data: existingAlloc } = await serviceClient
     .from('weekly_allocations')
     .select('id')
-    .gte('date', weekStart)
-    .lte('date', weekEnd)
+    .eq('date', weekStart)
     .limit(1)
     .maybeSingle()
 
