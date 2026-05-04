@@ -277,6 +277,17 @@ function registrationReminderHtml(name: string, weekLabel: string): string {
 export async function sendRegistrationReminders(
   supabase: SupabaseClient
 ): Promise<{ sent: number }> {
+  // Exclude fixed-spot holders — their spot is auto-assigned and they
+  // don't need to register during the Wed–Fri window.
+  const { data: fixedOwners } = await supabase
+    .from('parking_spots')
+    .select('fixed_user_id')
+    .not('fixed_user_id', 'is', null)
+
+  const fixedOwnerIds = new Set(
+    (fixedOwners ?? []).map((s: { fixed_user_id: string }) => s.fixed_user_id)
+  )
+
   const { data: profiles } = await supabase
     .from('profiles')
     .select('*')
@@ -290,6 +301,7 @@ export async function sendRegistrationReminders(
   let sent = 0
   for (const profile of profiles as Profile[]) {
     if (!profile.email) continue
+    if (fixedOwnerIds.has(profile.id)) continue
     try {
       await getResend().emails.send({
         from: FROM_EMAIL,

@@ -84,7 +84,10 @@ export async function POST(request: Request) {
         })
 
       if (insertError) {
-        return NextResponse.json({ error: insertError.message }, { status: 500 })
+        if (insertError.code === '23505') {
+          return NextResponse.json({ error: 'Spot already taken' }, { status: 409 })
+        }
+        return NextResponse.json({ error: 'Unexpected error' }, { status: 500 })
       }
 
       return NextResponse.json({ success: true, reclaimed: true })
@@ -108,42 +111,40 @@ export async function POST(request: Request) {
       error?: string
     }
 
-    // Fixed spot user releasing without an existing allocation (default reserved state)
+    // Fixed spot owner releasing a day that was never explicitly allocated
+    // (the spot is in its default "reserved" state with no allocation row).
+    // Use the atomic release_fixed_and_promote RPC instead of manual queries.
     if (result.error === 'You do not have this allocation') {
-      const { data: fixedSpot } = await serviceClient
-        .from('parking_spots')
-        .select('id')
-        .eq('id', spot_id)
-        .eq('fixed_user_id', user.id)
-        .single()
+      const { data: fixedRpcResult, error: fixedRpcError } = await serviceClient
+        .rpc('release_fixed_and_promote', {
+          p_user_id: user.id,
+          p_spot_id: spot_id,
+          p_date:    date,
+        })
 
-      if (fixedSpot) {
-        const { data: waitlistEntry } = await serviceClient
-          .from('waitlist')
-          .select('*')
-          .eq('date', date)
-          .order('created_at', { ascending: true })
-          .limit(1)
-          .maybeSingle()
-
-        if (waitlistEntry) {
-          await serviceClient.from('weekly_allocations').insert({
-            user_id: waitlistEntry.user_id,
-            spot_id,
-            date,
-            pass_number: 4,
-          })
-          await serviceClient.from('waitlist').delete().eq('id', waitlistEntry.id)
-
-          return NextResponse.json({
-            success: true,
-            released: true,
-            promoted_user: waitlistEntry.user_id,
-          })
-        }
-
-        return NextResponse.json({ success: true, released: true, promoted_user: null })
+      if (fixedRpcError) {
+        return NextResponse.json({ error: fixedRpcError.message }, { status: 500 })
       }
+
+      const fixedResult = fixedRpcResult as {
+        released?: boolean
+        promoted_user_id?: string | null
+        error?: string
+      }
+
+      if (fixedResult.error) {
+        return NextResponse.json({ error: fixedResult.error }, { status: 403 })
+      }
+
+      if (fixedResult.promoted_user_id) {
+        await sendPromotionEmail(serviceClient, fixedResult.promoted_user_id, spot_id, date)
+      }
+
+      return NextResponse.json({
+        success: true,
+        released: true,
+        promoted_user: fixedResult.promoted_user_id ?? null,
+      })
     }
 
     if (result.error) {
@@ -153,26 +154,7 @@ export async function POST(request: Request) {
     // Email is sent outside the DB transaction — a send failure never
     // rolls back the already-committed allocation change.
     if (result.promoted_user_id) {
-      try {
-        const [{ data: rawProfile }, { data: rawSpot }] = await Promise.all([
-          serviceClient.from('profiles').select('*').eq('id', result.promoted_user_id).single(),
-          serviceClient.from('parking_spots').select('*').eq('id', spot_id).single(),
-        ])
-
-        const promotedProfile = rawProfile as Profile | null
-        const spot = rawSpot as ParkingSpot | null
-
-        if (promotedProfile?.email && spot) {
-          await sendWaitlistPromotionEmail(
-            promotedProfile.email,
-            promotedProfile.full_name ?? 'User',
-            spot.label,
-            date
-          )
-        }
-      } catch (emailError) {
-        console.error('Waitlist promotion email error:', emailError)
-      }
+      await sendPromotionEmail(serviceClient, result.promoted_user_id, spot_id, date)
     }
 
     return NextResponse.json({
@@ -186,5 +168,33 @@ export async function POST(request: Request) {
       { error: error instanceof Error ? error.message : 'Release failed' },
       { status: 500 }
     )
+  }
+}
+
+async function sendPromotionEmail(
+  serviceClient: Awaited<ReturnType<typeof createServiceClient>>,
+  promotedUserId: string,
+  spotId: number,
+  date: string
+): Promise<void> {
+  try {
+    const [{ data: rawProfile }, { data: rawSpot }] = await Promise.all([
+      serviceClient.from('profiles').select('*').eq('id', promotedUserId).single(),
+      serviceClient.from('parking_spots').select('*').eq('id', spotId).single(),
+    ])
+
+    const promotedProfile = rawProfile as Profile | null
+    const spot = rawSpot as ParkingSpot | null
+
+    if (promotedProfile?.email && spot) {
+      await sendWaitlistPromotionEmail(
+        promotedProfile.email,
+        promotedProfile.full_name ?? 'User',
+        spot.label,
+        date
+      )
+    }
+  } catch (emailError) {
+    console.error('Waitlist promotion email error:', emailError)
   }
 }

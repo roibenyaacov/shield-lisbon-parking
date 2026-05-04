@@ -27,6 +27,25 @@ export async function POST(request: Request) {
 
     const serviceClient = await createServiceClient()
 
+    // Fetch spot and validate it is claimable
+    const { data: spot } = await serviceClient
+      .from('parking_spots')
+      .select('id, is_active, fixed_user_id')
+      .eq('id', spot_id)
+      .maybeSingle()
+
+    if (!spot) {
+      return NextResponse.json({ error: 'Spot not found' }, { status: 404 })
+    }
+
+    if (!spot.is_active) {
+      return NextResponse.json({ error: 'Spot is not available' }, { status: 409 })
+    }
+
+    if (spot.fixed_user_id && spot.fixed_user_id !== user.id) {
+      return NextResponse.json({ error: 'Spot is reserved' }, { status: 409 })
+    }
+
     const { data: existingAlloc } = await serviceClient
       .from('weekly_allocations')
       .select('id')
@@ -59,7 +78,10 @@ export async function POST(request: Request) {
       })
 
     if (insertError) {
-      return NextResponse.json({ error: insertError.message }, { status: 500 })
+      if (insertError.code === '23505') {
+        return NextResponse.json({ error: 'Spot already taken' }, { status: 409 })
+      }
+      return NextResponse.json({ error: 'Unexpected error' }, { status: 500 })
     }
 
     await serviceClient

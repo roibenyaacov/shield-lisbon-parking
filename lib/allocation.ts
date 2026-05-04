@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Profile, ParkingSpot, WeeklyRequest, WeeklyAllocationInsert, WaitlistInsert } from '@/types/db'
 import { TEAM_DAY_MAP, DAY_NAMES, DAY_KEYS, MAX_DAYS_PER_USER } from '@/lib/constants'
-import { addDays, format } from 'date-fns'
+import { addDays, format, parseISO } from 'date-fns'
 
 interface AllocationEntry {
   user_id: string
@@ -69,7 +69,7 @@ export async function runAllocation(
   for (let dayIndex = 0; dayIndex < 5; dayIndex++) {
     const dayName = DAY_NAMES[dayIndex]
     const dayKey = DAY_KEYS[dayIndex]
-    const dateStr = format(addDays(new Date(weekStart), dayIndex), 'yyyy-MM-dd')
+    const dateStr = format(addDays(parseISO(weekStart), dayIndex), 'yyyy-MM-dd')
 
     if (!spotOccupied.has(dateStr)) {
       spotOccupied.set(dateStr, new Set())
@@ -206,7 +206,7 @@ export async function saveAllocations(
   waitlisted: { user_id: string; date: string }[]
 ): Promise<void> {
   const weekDates = Array.from({ length: 5 }, (_, i) =>
-    format(addDays(new Date(weekStart), i), 'yyyy-MM-dd')
+    format(addDays(parseISO(weekStart), i), 'yyyy-MM-dd')
   )
 
   for (const date of weekDates) {

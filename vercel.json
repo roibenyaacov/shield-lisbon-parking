@@ -5,8 +5,16 @@
       "schedule": "0 18 * * 3"
     },
     {
+      "path": "/api/remind",
+      "schedule": "0 19 * * 3"
+    },
+    {
       "path": "/api/allocate",
       "schedule": "0 7 * * 5"
+    },
+    {
+      "path": "/api/allocate",
+      "schedule": "0 8 * * 5"
     }
   ]
 }
