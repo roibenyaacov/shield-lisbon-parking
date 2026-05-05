@@ -56,10 +56,10 @@ export async function runAllocation(
   const spots = (spotsRes.data ?? []) as ParkingSpot[]
   const requests = (requestsRes.data ?? []) as WeeklyRequest[]
   const profiles = (profilesRes.data ?? []) as Profile[]
-  const releases = (releasesRes.data ?? []) as { user_id: string }[]
+  const releases = (releasesRes.data ?? []) as { user_id: string; spot_id: number; date: string }[]
 
   const profileMap = new Map(profiles.map((p) => [p.id, p]))
-  const releasedUserIds = new Set(releases.map((r) => r.user_id))
+  const releaseKeys = new Set(releases.map((r) => `${r.user_id}:${r.spot_id}:${r.date}`))
 
   const userDayCount = new Map<string, number>()
   const allAllocations: AllocationEntry[] = []
@@ -78,7 +78,8 @@ export async function runAllocation(
 
     const fixedSpots = spots.filter((s) => s.fixed_user_id)
     for (const spot of fixedSpots) {
-      if (!releasedUserIds.has(spot.fixed_user_id!)) {
+      const isReleasedToday = releaseKeys.has(`${spot.fixed_user_id!}:${spot.id}:${dateStr}`)
+      if (!isReleasedToday) {
         occupiedToday.add(spot.id)
         allAllocations.push({
           user_id: spot.fixed_user_id!,
@@ -100,8 +101,11 @@ export async function runAllocation(
       if (!req[dayKey]) continue
       const profile = profileMap.get(req.user_id)
       if (!profile) continue
-      const hasFixedSpot = fixedSpots.some((s) => s.fixed_user_id === req.user_id)
-      if (hasFixedSpot && !releasedUserIds.has(req.user_id)) continue
+      const fixedSpot = fixedSpots.find((s) => s.fixed_user_id === req.user_id)
+      const fixedSpotReleasedToday = fixedSpot
+        ? releaseKeys.has(`${req.user_id}:${fixedSpot.id}:${dateStr}`)
+        : false
+      if (fixedSpot && !fixedSpotReleasedToday) continue
 
       dayRequests.push({
         userId: req.user_id,

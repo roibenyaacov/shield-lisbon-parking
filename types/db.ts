@@ -81,6 +81,7 @@ export type SpotRelease = {
   user_id: string
   spot_id: number
   week_start: string
+  date: string
   created_at: string
 }
 
@@ -127,6 +128,7 @@ export type SpotReleaseInsert = {
   user_id: string
   spot_id: number
   week_start: string
+  date: string
 }
 
 // ============================================
