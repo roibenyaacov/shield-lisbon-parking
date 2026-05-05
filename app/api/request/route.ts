@@ -7,8 +7,6 @@ import { LISBON_TIMEZONE, REQUEST_OPEN_DAY, REQUEST_OPEN_HOUR, MAX_DAYS_PER_USER
 // Mirrors the client-side getFormState() logic but runs on the server
 // so it cannot be bypassed by editing the browser JS.
 function isWindowOpen(): boolean {
-  if (process.env.NEXT_PUBLIC_DEMO_MODE === 'true') return true
-
   const now = toZonedTime(new Date(), LISBON_TIMEZONE)
   const day  = now.getDay()
   const hour = now.getHours()

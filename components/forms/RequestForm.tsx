@@ -33,8 +33,6 @@ function getOpenTime(): Date {
 type FormState = 'not_open' | 'open' | 'closed'
 
 function getFormState(): FormState {
-  if (process.env.NEXT_PUBLIC_DEMO_MODE === 'true') return 'open'
-
   const now = toZonedTime(new Date(), LISBON_TIMEZONE)
   const day = now.getDay()
   const hour = now.getHours()
