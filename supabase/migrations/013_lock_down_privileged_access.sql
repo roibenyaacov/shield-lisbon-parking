@@ -1,7 +1,7 @@
 -- Migration 013: Lock down privileged database entry points
 --
 -- WHY THIS EXISTS
--- ───────────────────────────────────────────────────────────────────
+-- -------------------------------------------------------------------
 -- SECURITY DEFINER RPCs execute with elevated privileges. PostgreSQL
 -- grants EXECUTE on new functions to PUBLIC by default, which would let
 -- authenticated clients call the release RPCs directly with an arbitrary
@@ -11,7 +11,7 @@
 -- The original profiles INSERT policy also allowed a user to create their
 -- own profile row with any role value. If the signup trigger ever failed
 -- to create a profile, a direct client insert could self-grant admin.
--- ───────────────────────────────────────────────────────────────────
+-- -------------------------------------------------------------------
 
 -- Only server-side service-role code should be able to execute the
 -- elevated release RPCs. The app's /api/release route already validates
@@ -42,5 +42,5 @@ CREATE POLICY "Users can insert own profile"
   TO authenticated
   WITH CHECK (
     auth.uid() = id
-    AND role = 'user'::user_role
+    AND role = 'user'::public.user_role
   );
