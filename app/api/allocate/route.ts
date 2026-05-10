@@ -1,11 +1,19 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { runAllocation, saveAllocations } from '@/lib/allocation'
-import { nextMonday, format } from 'date-fns'
+import { addDays, nextMonday, format, parseISO } from 'date-fns'
 import { toZonedTime } from 'date-fns-tz'
 import { sendAllocationEmails } from '@/lib/resend'
 import { LISBON_TIMEZONE, ALLOCATION_DAY, ALLOCATION_HOUR } from '@/lib/constants'
 import type { Profile } from '@/types/db'
+
+const FORMAL_ALLOCATION_PASSES = [1, 2, 3, 4]
+
+function getWeekDates(weekStart: string): string[] {
+  return Array.from({ length: 5 }, (_, i) =>
+    format(addDays(parseISO(weekStart), i), 'yyyy-MM-dd')
+  )
+}
 
 async function handleAllocate(request: NextRequest, weekStartOverride?: string) {
   const authHeader = request.headers.get('authorization')
@@ -69,21 +77,29 @@ async function handleAllocate(request: NextRequest, weekStartOverride?: string) 
 
   const serviceClient = await createServiceClient()
   const weekStart = weekStartOverride ?? format(nextMonday(new Date()), 'yyyy-MM-dd')
+  const weekDates = getWeekDates(weekStart)
 
   // ── Idempotency guard ─────────────────────────────────────────────────
-  // Check specifically for the first day of the target week.  Checking
-  // the full range (gte weekStart, lte weekEnd) is too broad: a manually
-  // created allocation for any mid-week date would silently skip the
-  // entire allocation run.  Checking only weekStart means a stray
-  // mid-week row doesn't block the cron.
-  const { data: existingAlloc } = await serviceClient
-    .from('weekly_allocations')
-    .select('id')
-    .eq('date', weekStart)
-    .limit(1)
-    .maybeSingle()
+  // Only formal allocation output should make the week look published.
+  // Pre-allocation fixed-spot reclaims (pass 0) and manual claims (pass 5)
+  // can create rows before cron, but must not block the weekly allocation.
+  const [{ data: existingAlloc }, { data: existingWaitlist }] = await Promise.all([
+    serviceClient
+      .from('weekly_allocations')
+      .select('id')
+      .in('date', weekDates)
+      .in('pass_number', FORMAL_ALLOCATION_PASSES)
+      .limit(1)
+      .maybeSingle(),
+    serviceClient
+      .from('waitlist')
+      .select('id')
+      .in('date', weekDates)
+      .limit(1)
+      .maybeSingle(),
+  ])
 
-  if (existingAlloc) {
+  if (existingAlloc || existingWaitlist) {
     return NextResponse.json({
       success:      true,
       week_start:   weekStart,
