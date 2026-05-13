@@ -32,7 +32,7 @@ BEGIN
 
   SELECT ARRAY(
     SELECT p_week_start + day_offset
-    FROM generate_series(0, 4) AS day_offset
+    FROM generate_series(0, 4) AS offsets(day_offset)
   )
   INTO v_week_dates;
 
