@@ -17,6 +17,10 @@ interface UserDayRequest {
   isTeamDay: boolean
 }
 
+function isUnlinkedReservedSpot(spot: ParkingSpot): boolean {
+  return !spot.fixed_user_id && (!!spot.reserved_name || spot.label === '40')
+}
+
 function pickSpot(
   availableSpots: ParkingSpot[],
   vehicleType: string | null
@@ -77,6 +81,10 @@ export async function runAllocation(
     const occupiedToday = spotOccupied.get(dateStr)!
 
     const fixedSpots = spots.filter((s) => s.fixed_user_id)
+    for (const spot of spots.filter(isUnlinkedReservedSpot)) {
+      occupiedToday.add(spot.id)
+    }
+
     for (const spot of fixedSpots) {
       if (!releasedUserIds.has(spot.fixed_user_id!)) {
         occupiedToday.add(spot.id)
