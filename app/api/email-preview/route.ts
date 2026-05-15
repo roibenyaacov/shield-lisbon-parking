@@ -1,7 +1,9 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { Resend } from 'resend'
+import { createClient } from '@/lib/supabase/server'
 import { registrationReminderHtml, weeklyAllocationHtml, waitlistPromotionHtml } from '@/lib/resend'
 import { format, nextMonday, addDays } from 'date-fns'
+import type { Profile } from '@/types/db'
 
 function buildHtml(type: string, weekStart: Date, weekLabel: string): string | null {
   if (type === 'reminder') {
@@ -49,6 +51,30 @@ const SUBJECT_MAP: Record<string, string> = {
   'waitlist-promotion': 'You Got a Spot!',
 }
 
+async function requireAdmin() {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (!user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  const { data: rawProfile } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('id', user.id)
+    .single()
+
+  const profile = rawProfile as Profile | null
+  if (!profile || profile.role !== 'admin') {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
+
+  return null
+}
+
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const type = searchParams.get('type') ?? 'reminder'
@@ -67,11 +93,16 @@ export async function GET(request: NextRequest) {
         '/api/email-preview?type=allocation-waitlist',
         '/api/email-preview?type=waitlist-promotion',
       ],
-      send_param: 'Add &send=email@example.com to send a real email',
+      send_param: 'Admins can add &send=email@example.com to send a real email',
     })
   }
 
   if (sendTo) {
+    const authError = await requireAdmin()
+    if (authError) {
+      return authError
+    }
+
     const resend = new Resend(process.env.RESEND_API_KEY)
     const { error } = await resend.emails.send({
       from: 'Shield Parking <parking@shield-parking.com>',
