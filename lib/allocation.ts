@@ -42,6 +42,10 @@ function pickSpot(
   return sorted[0]
 }
 
+function isUnlinkedReservedSpot(spot: ParkingSpot): boolean {
+  return !spot.fixed_user_id && (spot.label === '40' || !!spot.reserved_name?.trim())
+}
+
 export async function runAllocation(
   supabase: SupabaseClient,
   weekStart: string
@@ -75,6 +79,12 @@ export async function runAllocation(
       spotOccupied.set(dateStr, new Set())
     }
     const occupiedToday = spotOccupied.get(dateStr)!
+
+    for (const spot of spots) {
+      if (isUnlinkedReservedSpot(spot)) {
+        occupiedToday.add(spot.id)
+      }
+    }
 
     const fixedSpots = spots.filter((s) => s.fixed_user_id)
     for (const spot of fixedSpots) {
