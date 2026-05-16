@@ -227,14 +227,14 @@ export async function saveAllocations(
   if (allocations.length > 0) {
     const { error } = await supabase
       .from('weekly_allocations')
-      .insert(allocations as any)
+      .insert(allocations as WeeklyAllocationInsert[])
     if (error) throw new Error(`Failed to insert allocations: ${error.message}`)
   }
 
   if (waitlisted.length > 0) {
     const { error } = await supabase
       .from('waitlist')
-      .insert(waitlisted as any)
+      .insert(waitlisted as WaitlistInsert[])
     if (error) throw new Error(`Failed to insert waitlist: ${error.message}`)
   }
 }
