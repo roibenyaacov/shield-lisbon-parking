@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import type { Profile, ParkingSpot, WeeklyRequest, WeeklyAllocationInsert, WaitlistInsert } from '@/types/db'
+import type { Profile, ParkingSpot, WeeklyRequest } from '@/types/db'
 import { TEAM_DAY_MAP, DAY_NAMES, DAY_KEYS, MAX_DAYS_PER_USER } from '@/lib/constants'
 import { addDays, format, parseISO } from 'date-fns'
 
@@ -42,6 +42,10 @@ function pickSpot(
   return sorted[0]
 }
 
+function isUnlinkedReservedSpot(spot: ParkingSpot): boolean {
+  return !spot.fixed_user_id && (spot.label === '40' || !!spot.reserved_name?.trim())
+}
+
 export async function runAllocation(
   supabase: SupabaseClient,
   weekStart: string
@@ -75,21 +79,31 @@ export async function runAllocation(
       spotOccupied.set(dateStr, new Set())
     }
     const occupiedToday = spotOccupied.get(dateStr)!
+    const assignedToday = new Set<string>()
+
+    for (const spot of spots) {
+      if (isUnlinkedReservedSpot(spot)) {
+        occupiedToday.add(spot.id)
+      }
+    }
 
     const fixedSpots = spots.filter((s) => s.fixed_user_id)
     for (const spot of fixedSpots) {
       if (!releasedUserIds.has(spot.fixed_user_id!)) {
         occupiedToday.add(spot.id)
-        allAllocations.push({
-          user_id: spot.fixed_user_id!,
-          spot_id: spot.id,
-          date: dateStr,
-          pass_number: 0,
-        })
-        userDayCount.set(
-          spot.fixed_user_id!,
-          (userDayCount.get(spot.fixed_user_id!) ?? 0) + 1
-        )
+        if (!assignedToday.has(spot.fixed_user_id!)) {
+          assignedToday.add(spot.fixed_user_id!)
+          allAllocations.push({
+            user_id: spot.fixed_user_id!,
+            spot_id: spot.id,
+            date: dateStr,
+            pass_number: 0,
+          })
+          userDayCount.set(
+            spot.fixed_user_id!,
+            (userDayCount.get(spot.fixed_user_id!) ?? 0) + 1
+          )
+        }
       }
     }
 
@@ -123,10 +137,12 @@ export async function runAllocation(
       spots.filter((s) => s.is_active && !occupiedToday.has(s.id))
 
     const assign = (user: UserDayRequest, passNumber: number): boolean => {
+      if (assignedToday.has(user.userId)) return false
       const available = getAvailable()
       const spot = pickSpot(available, user.profile.vehicle_type)
       if (!spot) return false
       occupiedToday.add(spot.id)
+      assignedToday.add(user.userId)
       allAllocations.push({
         user_id: user.userId,
         spot_id: spot.id,
@@ -205,26 +221,13 @@ export async function saveAllocations(
   allocations: AllocationEntry[],
   waitlisted: { user_id: string; date: string }[]
 ): Promise<void> {
-  const weekDates = Array.from({ length: 5 }, (_, i) =>
-    format(addDays(parseISO(weekStart), i), 'yyyy-MM-dd')
-  )
+  const { error } = await supabase.rpc('save_weekly_allocation_results', {
+    p_week_start: weekStart,
+    p_allocations: allocations,
+    p_waitlisted: waitlisted,
+  })
 
-  for (const date of weekDates) {
-    await supabase.from('weekly_allocations').delete().eq('date', date)
-    await supabase.from('waitlist').delete().eq('date', date)
-  }
-
-  if (allocations.length > 0) {
-    const { error } = await supabase
-      .from('weekly_allocations')
-      .insert(allocations as any)
-    if (error) throw new Error(`Failed to insert allocations: ${error.message}`)
-  }
-
-  if (waitlisted.length > 0) {
-    const { error } = await supabase
-      .from('waitlist')
-      .insert(waitlisted as any)
-    if (error) throw new Error(`Failed to insert waitlist: ${error.message}`)
+  if (error) {
+    throw new Error(`Failed to save allocations: ${error.message}`)
   }
 }
