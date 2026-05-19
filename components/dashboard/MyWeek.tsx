@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Card } from '@/components/ui/Card'
-import { Check, Clock, ChevronRight, ChevronLeft, ChevronDown, Zap, Bike, LogOut, PlusCircle, Lock, Car } from 'lucide-react'
+import { Check, Clock, ChevronRight, ChevronLeft, ChevronDown, Zap, Bike, Lock, Car } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { format, addDays, startOfWeek, addWeeks, isBefore, startOfDay, isToday } from 'date-fns'
 import { DAY_LABELS, DAY_NAMES } from '@/lib/constants'
@@ -83,7 +83,8 @@ export function MyWeek({ userId, fixedSpotId, fixedSpotLabel, userName }: MyWeek
     ])
 
     const allocs = (allocsRes.data ?? []) as (WeeklyAllocation & { spot: ParkingSpot })[]
-    const waitlistedDates = new Set((waitlistRes.data ?? []).map((w: any) => w.date))
+    const waitlistedRows = (waitlistRes.data ?? []) as { date: string }[]
+    const waitlistedDates = new Set(waitlistedRows.map((w) => w.date))
 
     setDays(dates.map(d => {
       const alloc = allocs.find(a => a.date === d.date)
@@ -224,8 +225,8 @@ export function MyWeek({ userId, fixedSpotId, fixedSpotLabel, userName }: MyWeek
 
       await loadWeek(weekOffset)
       if (expandedDay) await loadDaySpots(expandedDay)
-    } catch (err: any) {
-      toast.error(err.message ?? 'Action failed')
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Action failed')
     } finally {
       setActionLoading(null)
       setConfirmAction(null)
