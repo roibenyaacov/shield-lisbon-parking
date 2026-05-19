@@ -70,20 +70,21 @@ async function handleAllocate(request: NextRequest, weekStartOverride?: string) 
   const serviceClient = await createServiceClient()
   const weekStart = weekStartOverride ?? format(nextMonday(new Date()), 'yyyy-MM-dd')
 
-  // ── Idempotency guard ─────────────────────────────────────────────────
-  // Check specifically for the first day of the target week.  Checking
-  // the full range (gte weekStart, lte weekEnd) is too broad: a manually
-  // created allocation for any mid-week date would silently skip the
-  // entire allocation run.  Checking only weekStart means a stray
-  // mid-week row doesn't block the cron.
-  const { data: existingAlloc } = await serviceClient
-    .from('weekly_allocations')
-    .select('id')
-    .eq('date', weekStart)
+  // Manual claims/reclaims can create weekly_allocations rows before the
+  // Friday cron. Only the durable allocation_runs marker means the cron
+  // already completed for the week.
+  const { data: existingRun, error: existingRunError } = await serviceClient
+    .from('allocation_runs')
+    .select('week_start')
+    .eq('week_start', weekStart)
     .limit(1)
     .maybeSingle()
 
-  if (existingAlloc) {
+  if (existingRunError) {
+    throw new Error(`Failed to check allocation status: ${existingRunError.message}`)
+  }
+
+  if (existingRun) {
     return NextResponse.json({
       success:      true,
       week_start:   weekStart,
@@ -93,7 +94,16 @@ async function handleAllocate(request: NextRequest, weekStartOverride?: string) 
   }
 
   const { allocations, waitlisted } = await runAllocation(serviceClient, weekStart)
-  await saveAllocations(serviceClient, weekStart, allocations, waitlisted)
+  const saved = await saveAllocations(serviceClient, weekStart, allocations, waitlisted)
+
+  if (!saved) {
+    return NextResponse.json({
+      success:      true,
+      week_start:   weekStart,
+      already_run:  true,
+      message:      'Allocations already exist for this week.',
+    })
+  }
 
   try {
     await sendAllocationEmails(serviceClient, allocations, waitlisted)
