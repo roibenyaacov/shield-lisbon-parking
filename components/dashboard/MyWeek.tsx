@@ -164,7 +164,7 @@ export function MyWeek({ userId, fixedSpotId, fixedSpotLabel, userName }: MyWeek
     if (spot.isCurrentUser) {
       setConfirmAction({ spotId: spot.id, date, type: 'release' })
     } else if (spot.isCurrentUserFixedSpot && spot.isAvailable) {
-      setConfirmAction({ spotId: spot.id, date, type: 'release' })
+      setConfirmAction({ spotId: spot.id, date, type: 'reclaim' })
     } else if (spot.isAvailable && !spot.isFixed) {
       const userHasSpotToday = days.find(d => d.date === date)?.spotId
       if (userHasSpotToday) {
