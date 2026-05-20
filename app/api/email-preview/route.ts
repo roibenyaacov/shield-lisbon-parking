@@ -2,6 +2,37 @@ import { NextResponse, type NextRequest } from 'next/server'
 import { Resend } from 'resend'
 import { registrationReminderHtml, weeklyAllocationHtml, waitlistPromotionHtml } from '@/lib/resend'
 import { format, nextMonday, addDays } from 'date-fns'
+import { createClient } from '@/lib/supabase/server'
+import type { Profile } from '@/types/db'
+
+async function authorizePreviewAccess(request: NextRequest): Promise<NextResponse | null> {
+  const authHeader = request.headers.get('authorization')
+  const cronSecret = process.env.CRON_SECRET
+
+  if (cronSecret && authHeader === `Bearer ${cronSecret}`) {
+    return null
+  }
+
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  if (!user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  const { data: rawProfile } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .single()
+
+  const profile = rawProfile as Pick<Profile, 'role'> | null
+  if (profile?.role !== 'admin') {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
+
+  return null
+}
 
 function buildHtml(type: string, weekStart: Date, weekLabel: string): string | null {
   if (type === 'reminder') {
@@ -50,6 +81,9 @@ const SUBJECT_MAP: Record<string, string> = {
 }
 
 export async function GET(request: NextRequest) {
+  const unauthorizedResponse = await authorizePreviewAccess(request)
+  if (unauthorizedResponse) return unauthorizedResponse
+
   const { searchParams } = new URL(request.url)
   const type = searchParams.get('type') ?? 'reminder'
   const sendTo = searchParams.get('send')
