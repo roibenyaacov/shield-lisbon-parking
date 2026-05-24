@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server'
 import { Resend } from 'resend'
 import { registrationReminderHtml, weeklyAllocationHtml, waitlistPromotionHtml } from '@/lib/resend'
 import { format, nextMonday, addDays } from 'date-fns'
+import { createClient } from '@/lib/supabase/server'
 
 function buildHtml(type: string, weekStart: Date, weekLabel: string): string | null {
   if (type === 'reminder') {
@@ -50,6 +51,23 @@ const SUBJECT_MAP: Record<string, string> = {
 }
 
 export async function GET(request: NextRequest) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  if (!user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .single()
+
+  if (profile?.role !== 'admin') {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
+
   const { searchParams } = new URL(request.url)
   const type = searchParams.get('type') ?? 'reminder'
   const sendTo = searchParams.get('send')
