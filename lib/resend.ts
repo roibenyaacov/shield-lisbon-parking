@@ -12,9 +12,9 @@ function getResend() {
   return _resend
 }
 
-const FROM_EMAIL = 'Shield Parking <parking@shield-parking.com>'
+const FROM_EMAIL = 'Parking App <noreply@smarty-parking-portugal.com>'
 
-const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://shield-parking.com'
+const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://smarty-parking-portugal.com'
 const LOGO_URL = `${BASE_URL}/logo.png`
 
 function emailWrapper(content: string): string {

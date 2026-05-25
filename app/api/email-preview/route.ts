@@ -74,7 +74,7 @@ export async function GET(request: NextRequest) {
   if (sendTo) {
     const resend = new Resend(process.env.RESEND_API_KEY)
     const { error } = await resend.emails.send({
-      from: 'Shield Parking <parking@shield-parking.com>',
+      from: 'Parking App <noreply@smarty-parking-portugal.com>',
       to: sendTo,
       subject: `[TEST] ${SUBJECT_MAP[type] ?? type}`,
       html,
