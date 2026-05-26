@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import type { Profile, ParkingSpot, WeeklyRequest, WeeklyAllocationInsert, WaitlistInsert } from '@/types/db'
+import type { Profile, ParkingSpot, WeeklyRequest } from '@/types/db'
 import { TEAM_DAY_MAP, DAY_NAMES, DAY_KEYS, MAX_DAYS_PER_USER } from '@/lib/constants'
 import { addDays, format, parseISO } from 'date-fns'
 
@@ -204,27 +204,17 @@ export async function saveAllocations(
   weekStart: string,
   allocations: AllocationEntry[],
   waitlisted: { user_id: string; date: string }[]
-): Promise<void> {
-  const weekDates = Array.from({ length: 5 }, (_, i) =>
-    format(addDays(parseISO(weekStart), i), 'yyyy-MM-dd')
-  )
+): Promise<{ alreadyRun: boolean }> {
+  const { data, error } = await supabase.rpc('save_weekly_allocation_results', {
+    p_week_start:  weekStart,
+    p_allocations: allocations,
+    p_waitlisted:  waitlisted,
+  })
 
-  for (const date of weekDates) {
-    await supabase.from('weekly_allocations').delete().eq('date', date)
-    await supabase.from('waitlist').delete().eq('date', date)
+  if (error) {
+    throw new Error(`Failed to save allocation results: ${error.message}`)
   }
 
-  if (allocations.length > 0) {
-    const { error } = await supabase
-      .from('weekly_allocations')
-      .insert(allocations as any)
-    if (error) throw new Error(`Failed to insert allocations: ${error.message}`)
-  }
-
-  if (waitlisted.length > 0) {
-    const { error } = await supabase
-      .from('waitlist')
-      .insert(waitlisted as any)
-    if (error) throw new Error(`Failed to insert waitlist: ${error.message}`)
-  }
+  const result = data as { already_run?: boolean } | null
+  return { alreadyRun: result?.already_run === true }
 }
