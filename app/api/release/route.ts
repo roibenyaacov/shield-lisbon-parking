@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { sendWaitlistPromotionEmail } from '@/lib/resend'
 import type { Profile, ParkingSpot } from '@/types/db'
+import { format, parseISO, startOfWeek } from 'date-fns'
 
 export async function POST(request: Request) {
   try {
@@ -74,7 +75,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'You already have a spot for this day' }, { status: 409 })
       }
 
-      const { error: insertError } = await serviceClient
+      const { data: reclaimedAlloc, error: insertError } = await serviceClient
         .from('weekly_allocations')
         .insert({
           user_id: user.id,
@@ -82,6 +83,8 @@ export async function POST(request: Request) {
           date,
           pass_number: 0,
         })
+        .select('id')
+        .single()
 
       if (insertError) {
         if (insertError.code === '23505') {
@@ -90,10 +93,32 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'Unexpected error' }, { status: 500 })
       }
 
+      const releaseDeleteError = await deleteFixedSpotRelease(
+        serviceClient,
+        user.id,
+        spot_id,
+        date
+      )
+
+      if (releaseDeleteError) {
+        if (reclaimedAlloc?.id) {
+          await serviceClient
+            .from('weekly_allocations')
+            .delete()
+            .eq('id', reclaimedAlloc.id)
+        }
+        return NextResponse.json({ error: releaseDeleteError.message }, { status: 500 })
+      }
+
       return NextResponse.json({ success: true, reclaimed: true })
     }
 
     // ── RELEASE (atomic via RPC) ──────────────────────────────────────
+    const releaseMarker = await recordFixedSpotRelease(serviceClient, user.id, spot_id, date)
+    if (releaseMarker.error) {
+      return NextResponse.json({ error: releaseMarker.error.message }, { status: 500 })
+    }
+
     const { data: rpcResult, error: rpcError } = await serviceClient
       .rpc('release_and_promote', {
         p_user_id: user.id,
@@ -102,6 +127,9 @@ export async function POST(request: Request) {
       })
 
     if (rpcError) {
+      if (releaseMarker.marked) {
+        await deleteFixedSpotRelease(serviceClient, user.id, spot_id, date)
+      }
       return NextResponse.json({ error: rpcError.message }, { status: 500 })
     }
 
@@ -123,6 +151,9 @@ export async function POST(request: Request) {
         })
 
       if (fixedRpcError) {
+        if (releaseMarker.marked) {
+          await deleteFixedSpotRelease(serviceClient, user.id, spot_id, date)
+        }
         return NextResponse.json({ error: fixedRpcError.message }, { status: 500 })
       }
 
@@ -133,6 +164,9 @@ export async function POST(request: Request) {
       }
 
       if (fixedResult.error) {
+        if (releaseMarker.marked) {
+          await deleteFixedSpotRelease(serviceClient, user.id, spot_id, date)
+        }
         return NextResponse.json({ error: fixedResult.error }, { status: 403 })
       }
 
@@ -148,6 +182,9 @@ export async function POST(request: Request) {
     }
 
     if (result.error) {
+      if (releaseMarker.marked) {
+        await deleteFixedSpotRelease(serviceClient, user.id, spot_id, date)
+      }
       return NextResponse.json({ error: result.error }, { status: 403 })
     }
 
@@ -169,6 +206,54 @@ export async function POST(request: Request) {
       { status: 500 }
     )
   }
+}
+
+async function recordFixedSpotRelease(
+  serviceClient: Awaited<ReturnType<typeof createServiceClient>>,
+  userId: string,
+  spotId: number,
+  date: string
+): Promise<{ marked: boolean; error: Error | null }> {
+  const { data: fixedSpot, error: fixedSpotError } = await serviceClient
+    .from('parking_spots')
+    .select('id')
+    .eq('id', spotId)
+    .eq('fixed_user_id', userId)
+    .maybeSingle()
+
+  if (fixedSpotError) return { marked: false, error: new Error(fixedSpotError.message) }
+  if (!fixedSpot) return { marked: false, error: null }
+
+  const weekStart = format(startOfWeek(parseISO(date), { weekStartsOn: 1 }), 'yyyy-MM-dd')
+  const { error } = await serviceClient
+    .from('spot_releases')
+    .upsert(
+      {
+        user_id: userId,
+        spot_id: spotId,
+        week_start: weekStart,
+        date,
+      },
+      { onConflict: 'user_id,spot_id,date' }
+    )
+
+  return { marked: !error, error: error ? new Error(error.message) : null }
+}
+
+async function deleteFixedSpotRelease(
+  serviceClient: Awaited<ReturnType<typeof createServiceClient>>,
+  userId: string,
+  spotId: number,
+  date: string
+): Promise<Error | null> {
+  const { error } = await serviceClient
+    .from('spot_releases')
+    .delete()
+    .eq('user_id', userId)
+    .eq('spot_id', spotId)
+    .eq('date', date)
+
+  return error ? new Error(error.message) : null
 }
 
 async function sendPromotionEmail(
