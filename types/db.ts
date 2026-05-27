@@ -81,6 +81,12 @@ export type SpotRelease = {
   user_id: string
   spot_id: number
   week_start: string
+  date: string
+  created_at: string
+}
+
+export type AllocationRun = {
+  week_start: string
   created_at: string
 }
 
@@ -127,6 +133,12 @@ export type SpotReleaseInsert = {
   user_id: string
   spot_id: number
   week_start: string
+  date: string
+}
+
+export type AllocationRunInsert = {
+  week_start: string
+  created_at?: string
 }
 
 // ============================================
@@ -277,9 +289,32 @@ export type Database = {
           }
         ]
       }
+      allocation_runs: {
+        Row: AllocationRun
+        Insert: AllocationRunInsert
+        Update: Partial<AllocationRun>
+        Relationships: []
+      }
     }
     Views: Record<string, never>
-    Functions: Record<string, never>
+    Functions: {
+      save_weekly_allocation_results: {
+        Args: {
+          p_week_start: string
+          p_allocations: Array<{
+            user_id: string
+            spot_id: number
+            date: string
+            pass_number: number
+          }>
+          p_waitlisted: Array<{
+            user_id: string
+            date: string
+          }>
+        }
+        Returns: void
+      }
+    }
     Enums: {
       team_enum: Team
       vehicle_type_enum: VehicleType
