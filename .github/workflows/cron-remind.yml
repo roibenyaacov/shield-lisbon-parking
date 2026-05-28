@@ -1,0 +1,35 @@
+name: "Cron: Wednesday reminder emails"
+
+on:
+  schedule:
+    # DST-safe pair: exactly one of these hits 19:00 Lisbon time.
+    # UTC+0 (winter): 19:00 UTC = 19:00 WET
+    # UTC+1 (summer): 18:00 UTC = 19:00 WEST
+    - cron: "0 18 * * 3"
+    - cron: "0 19 * * 3"
+  workflow_dispatch: {}
+
+jobs:
+  remind:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Call /api/remind
+        env:
+          SITE_URL: ${{ secrets.SITE_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          RESPONSE=$(curl -sf -w "\n%{http_code}" \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            "$SITE_URL/api/remind")
+
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+
+          echo "HTTP $HTTP_CODE"
+          echo "$BODY" | jq . 2>/dev/null || echo "$BODY"
+
+          if [ "$HTTP_CODE" -ge 400 ]; then
+            echo "::error::Remind endpoint returned HTTP $HTTP_CODE"
+            exit 1
+          fi

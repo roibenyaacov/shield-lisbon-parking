@@ -3,7 +3,7 @@ import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { runAllocation, saveAllocations } from '@/lib/allocation'
 import { nextMonday, format } from 'date-fns'
 import { toZonedTime } from 'date-fns-tz'
-import { sendAllocationEmails } from '@/lib/resend'
+import { sendAllocationEmails, type EmailSendSummary } from '@/lib/resend'
 import { LISBON_TIMEZONE, ALLOCATION_DAY, ALLOCATION_HOUR } from '@/lib/constants'
 import type { Profile } from '@/types/db'
 
@@ -24,12 +24,21 @@ async function handleAllocate(request: NextRequest, weekStartOverride?: string) 
   // this so they can re-run anytime.
   if (isCronAuthed) {
     const nowLisbon = toZonedTime(new Date(), LISBON_TIMEZONE)
-    if (nowLisbon.getDay() !== ALLOCATION_DAY || nowLisbon.getHours() !== ALLOCATION_HOUR) {
+    const lisbonHour = nowLisbon.getHours()
+    // Widened window: accept ALLOCATION_HOUR or ALLOCATION_HOUR+1 to tolerate
+    // cron-jitter that crosses the hour boundary mid-execution.  The
+    // idempotency guard further down (`existingAlloc` check) prevents a
+    // duplicate run in the second hour from creating a second allocation.
+    if (
+      nowLisbon.getDay() !== ALLOCATION_DAY ||
+      lisbonHour < ALLOCATION_HOUR ||
+      lisbonHour > ALLOCATION_HOUR + 1
+    ) {
       return NextResponse.json({
         skipped: true,
-        reason:  'Not the target Lisbon hour for allocation',
+        reason:  'Not the target Lisbon window for allocation',
         lisbon_day:  nowLisbon.getDay(),
-        lisbon_hour: nowLisbon.getHours(),
+        lisbon_hour: lisbonHour,
       })
     }
   }
@@ -95,10 +104,18 @@ async function handleAllocate(request: NextRequest, weekStartOverride?: string) 
   const { allocations, waitlisted } = await runAllocation(serviceClient, weekStart)
   await saveAllocations(serviceClient, weekStart, allocations, waitlisted)
 
+  // Per-user send errors are already captured inside the summary and
+  // never reach this catch.  This try/catch only fires if the function
+  // itself throws before it can return a summary (e.g. profiles fetch
+  // failed).  In that case we still return success: true for the
+  // allocation persistence and surface the error in email_error.
+  let emailSummary: EmailSendSummary | null = null
+  let emailError:   string | null            = null
   try {
-    await sendAllocationEmails(serviceClient, allocations, waitlisted)
-  } catch (emailError) {
-    console.error('Email notification error:', emailError)
+    emailSummary = await sendAllocationEmails(serviceClient, allocations, waitlisted)
+  } catch (err) {
+    emailError = err instanceof Error ? err.message : 'unknown email error'
+    console.error('Email notification error:', err)
   }
 
   return NextResponse.json({
@@ -106,6 +123,8 @@ async function handleAllocate(request: NextRequest, weekStartOverride?: string) 
     week_start:        weekStart,
     allocations_count: allocations.length,
     waitlisted_count:  waitlisted.length,
+    email_summary:     emailSummary,
+    email_error:       emailError,
   })
 }
 

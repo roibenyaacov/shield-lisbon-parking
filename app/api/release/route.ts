@@ -188,6 +188,8 @@ async function sendPromotionEmail(
 
     if (promotedProfile?.email && spot) {
       await sendWaitlistPromotionEmail(
+        serviceClient,
+        promotedProfile.id,
         promotedProfile.email,
         promotedProfile.full_name ?? 'User',
         spot.label,

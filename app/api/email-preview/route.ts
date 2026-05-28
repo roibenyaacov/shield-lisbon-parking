@@ -1,7 +1,13 @@
 import { NextResponse, type NextRequest } from 'next/server'
-import { Resend } from 'resend'
-import { registrationReminderHtml, weeklyAllocationHtml, waitlistPromotionHtml } from '@/lib/resend'
+import {
+  registrationReminderHtml,
+  weeklyAllocationHtml,
+  waitlistPromotionHtml,
+  sendTestEmail,
+} from '@/lib/resend'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { format, nextMonday, addDays } from 'date-fns'
+import type { Profile } from '@/types/db'
 
 function buildHtml(type: string, weekStart: Date, weekLabel: string): string | null {
   if (type === 'reminder') {
@@ -54,6 +60,37 @@ export async function GET(request: NextRequest) {
   const type = searchParams.get('type') ?? 'reminder'
   const sendTo = searchParams.get('send')
 
+  // ── Admin-only gate for ?send= ────────────────────────────────────────
+  // The HTML preview without ?send stays public.  Sending a real email
+  // (which would go out from our verified Resend domain) is restricted
+  // to authenticated admins to prevent the endpoint being used as an
+  // open relay for spoofed messages.
+  //
+  // Mirrors the admin-auth pattern in /api/allocate.  We return 403 in
+  // both the unauthenticated and non-admin cases to avoid leaking
+  // account state to anonymous callers.
+  let adminUserId: string | null = null
+  if (sendTo) {
+    const userClient = await createClient()
+    const { data: { user } } = await userClient.auth.getUser()
+
+    if (!user) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
+    const { data: rawProfile } = await userClient
+      .from('profiles')
+      .select('*')
+      .eq('id', user.id)
+      .single()
+
+    const profile = rawProfile as Profile | null
+    if (!profile || profile.role !== 'admin') {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+    adminUserId = user.id
+  }
+
   const weekStart = nextMonday(new Date())
   const weekLabel = format(weekStart, 'MMMM d, yyyy')
 
@@ -72,17 +109,23 @@ export async function GET(request: NextRequest) {
   }
 
   if (sendTo) {
-    const resend = new Resend(process.env.RESEND_API_KEY)
-    const { error } = await resend.emails.send({
-      from: 'Parking App <noreply@smarty-parking-portugal.com>',
-      to: sendTo,
+    // Use the shared sender so this test send goes through the same
+    // FROM/replyTo conventions and lands in the email_log table just
+    // like production sends do.
+    const serviceClient = await createServiceClient()
+    const summary = await sendTestEmail(serviceClient, adminUserId, {
+      to:      sendTo,
       subject: `[TEST] ${SUBJECT_MAP[type] ?? type}`,
       html,
+      type,
     })
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
+    if (summary.failed > 0) {
+      return NextResponse.json(
+        { error: summary.errors[0]?.message ?? 'Send failed', email_summary: summary },
+        { status: 500 }
+      )
     }
-    return NextResponse.json({ success: true, sent_to: sendTo, type })
+    return NextResponse.json({ success: true, sent_to: sendTo, type, email_summary: summary })
   }
 
   return new NextResponse(html, { headers: { 'Content-Type': 'text/html; charset=utf-8' } })

@@ -12,10 +12,92 @@ function getResend() {
   return _resend
 }
 
-const FROM_EMAIL = 'Parking App <noreply@smarty-parking-portugal.com>'
+const FROM_EMAIL  = 'Parking App <noreply@smarty-parking-portugal.com>'
+const REPLY_TO    = 'parking@shieldfc.com'
+const SEND_CONCURRENCY = 5
 
 const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://smarty-parking-portugal.com'
 const LOGO_URL = `${BASE_URL}/logo.png`
+
+// ─── Delivery summary contract returned by every sender ─────────────────
+// `attempted` is the number of users we tried to email.
+// `sent` / `failed` always sum to `attempted`.
+// `errors` carries one entry per failure so cron logs are diagnostic.
+// ─────────────────────────────────────────────────────────────────────────
+export interface EmailSendError {
+  email:   string
+  message: string
+}
+
+export interface EmailSendSummary {
+  attempted: number
+  sent:      number
+  failed:    number
+  errors:    EmailSendError[]
+}
+
+// Bounded-concurrency map: never starts more than `concurrency` promises at
+// once.  Order of results matches order of `items`.  Never rejects — each
+// slot is wrapped in a settled result so the caller sees per-item outcomes.
+async function mapWithConcurrency<T, R>(
+  items:       T[],
+  concurrency: number,
+  fn:          (item: T) => Promise<R>
+): Promise<PromiseSettledResult<R>[]> {
+  const results: PromiseSettledResult<R>[] = new Array(items.length)
+  let cursor = 0
+
+  const workerCount = Math.max(1, Math.min(concurrency, items.length))
+  const workers = Array.from({ length: workerCount }, async () => {
+    while (true) {
+      const idx = cursor++
+      if (idx >= items.length) return
+      try {
+        const value = await fn(items[idx])
+        results[idx] = { status: 'fulfilled', value }
+      } catch (reason) {
+        results[idx] = { status: 'rejected', reason }
+      }
+    }
+  })
+
+  await Promise.all(workers)
+  return results
+}
+
+// Best-effort persistence to the email_log table.  Never throws — a
+// logging failure must never break the send pipeline.  Safe to call even
+// if migration 013 has not yet been applied (the catch will swallow the
+// "relation does not exist" error and console.error it).
+async function logEmail(
+  supabase: SupabaseClient,
+  entry: {
+    user_id:              string | null
+    email:                string
+    type:                 string
+    status:               'sent' | 'failed'
+    error?:               string | null
+    provider_message_id?: string | null
+    sent_at?:             string | null
+  }
+): Promise<void> {
+  try {
+    const { error } = await supabase.from('email_log').insert({
+      user_id:             entry.user_id,
+      email:               entry.email,
+      type:                entry.type,
+      status:              entry.status,
+      error:               entry.error               ?? null,
+      provider_message_id: entry.provider_message_id ?? null,
+      sent_at:             entry.sent_at             ?? null,
+    } as never)
+    if (error) {
+      console.error('email_log insert failed (non-fatal):', error.message)
+    }
+  } catch (err) {
+    console.error('email_log insert threw (non-fatal):', err)
+  }
+}
 
 function emailWrapper(content: string): string {
   return `<!DOCTYPE html>
@@ -168,7 +250,9 @@ export async function sendAllocationEmails(
   supabase: SupabaseClient,
   allocations: { user_id: string; spot_id: number; date: string; pass_number: number }[],
   waitlisted: { user_id: string; date: string }[]
-): Promise<void> {
+): Promise<EmailSendSummary> {
+  const summary: EmailSendSummary = { attempted: 0, sent: 0, failed: 0, errors: [] }
+
   const userAllocations = new Map<string, { date: string; spot_id: number }[]>()
   for (const alloc of allocations) {
     if (alloc.pass_number === 0) continue
@@ -185,7 +269,7 @@ export async function sendAllocationEmails(
   }
 
   const allUserIds = new Set([...userAllocations.keys(), ...userWaitlist.keys()])
-  if (allUserIds.size === 0) return
+  if (allUserIds.size === 0) return summary
 
   const [profilesRes, spotsRes] = await Promise.all([
     supabase.from('profiles').select('*').in('id', [...allUserIds]),
@@ -193,49 +277,96 @@ export async function sendAllocationEmails(
   ])
 
   const profiles = (profilesRes.data ?? []) as Profile[]
-  const spots = (spotsRes.data ?? []) as ParkingSpot[]
+  const spots    = (spotsRes.data    ?? []) as ParkingSpot[]
 
   const profileMap = new Map(profiles.map((p) => [p.id, p]))
-  const spotMap = new Map(spots.map((s) => [s.id, s]))
+  const spotMap    = new Map(spots.map((s) => [s.id, s]))
 
+  // Build one self-contained payload per user, then dispatch in parallel
+  // with bounded concurrency.  This keeps batch latency low even with
+  // many recipients and ensures a single Resend rate-limit response does
+  // not silently drop emails for the remaining users.
+  interface Payload {
+    profile:       Profile
+    assignments:   { date: string; spotLabel: string }[]
+    waitDays:      string[]
+    subject:       string
+  }
+
+  const payloads: Payload[] = []
   for (const userId of allUserIds) {
     const profile = profileMap.get(userId)
     if (!profile?.email) continue
 
-    const allocs = userAllocations.get(userId) ?? []
-    const waitDays = userWaitlist.get(userId) ?? []
-
+    const allocs   = userAllocations.get(userId) ?? []
+    const waitDays = userWaitlist.get(userId)    ?? []
     if (allocs.length === 0 && waitDays.length === 0) continue
 
     const assignments = allocs
       .map((a) => ({
-        date: a.date,
+        date:      a.date,
         spotLabel: spotMap.get(a.spot_id)?.label ?? '?',
       }))
       .sort((a, b) => a.date.localeCompare(b.date))
 
     const sortedWaitDays = [...waitDays].sort()
-
     const firstDate = assignments[0]?.date ?? sortedWaitDays[0]
-    const subject = assignments.length > 0
+    const subject   = assignments.length > 0
       ? `🅿️ Parking for Next Week — ${format(new Date(firstDate), 'MMM d')}`
       : `⏳ Waitlisted — Week of ${format(new Date(firstDate), 'MMM d')}`
 
-    try {
-      await getResend().emails.send({
-        from: FROM_EMAIL,
-        to: profile.email,
-        subject,
-        html: weeklyAllocationHtml(
-          profile.full_name ?? 'Team Member',
-          assignments,
-          sortedWaitDays
-        ),
+    payloads.push({ profile, assignments, waitDays: sortedWaitDays, subject })
+  }
+
+  summary.attempted = payloads.length
+  if (payloads.length === 0) return summary
+
+  const results = await mapWithConcurrency(payloads, SEND_CONCURRENCY, async (p) => {
+    const res = await getResend().emails.send({
+      from:    FROM_EMAIL,
+      replyTo: REPLY_TO,
+      to:      p.profile.email!,
+      subject: p.subject,
+      html:    weeklyAllocationHtml(
+        p.profile.full_name ?? 'Team Member',
+        p.assignments,
+        p.waitDays
+      ),
+    })
+    if (res.error) throw new Error(res.error.message)
+    return { messageId: res.data?.id ?? null }
+  })
+
+  const now = new Date().toISOString()
+  for (let i = 0; i < results.length; i++) {
+    const p = payloads[i]
+    const r = results[i]
+    if (r.status === 'fulfilled') {
+      summary.sent++
+      await logEmail(supabase, {
+        user_id:             p.profile.id,
+        email:               p.profile.email!,
+        type:                'allocation',
+        status:              'sent',
+        provider_message_id: r.value.messageId,
+        sent_at:             now,
       })
-    } catch (err) {
-      console.error(`Failed to send allocation email to ${profile.email}:`, err)
+    } else {
+      const msg = r.reason instanceof Error ? r.reason.message : String(r.reason)
+      summary.failed++
+      summary.errors.push({ email: p.profile.email!, message: msg })
+      console.error(`Failed to send allocation email to ${p.profile.email}:`, msg)
+      await logEmail(supabase, {
+        user_id: p.profile.id,
+        email:   p.profile.email!,
+        type:    'allocation',
+        status:  'failed',
+        error:   msg,
+      })
     }
   }
+
+  return summary
 }
 
 function registrationReminderHtml(name: string, weekLabel: string): string {
@@ -276,7 +407,9 @@ function registrationReminderHtml(name: string, weekLabel: string): string {
 
 export async function sendRegistrationReminders(
   supabase: SupabaseClient
-): Promise<{ sent: number }> {
+): Promise<EmailSendSummary> {
+  const summary: EmailSendSummary = { attempted: 0, sent: 0, failed: 0, errors: [] }
+
   // Exclude fixed-spot holders — their spot is auto-assigned and they
   // don't need to register during the Wed–Fri window.
   const { data: fixedOwners } = await supabase
@@ -288,54 +421,160 @@ export async function sendRegistrationReminders(
     (fixedOwners ?? []).map((s: { fixed_user_id: string }) => s.fixed_user_id)
   )
 
-  const { data: profiles } = await supabase
+  const { data: profilesData } = await supabase
     .from('profiles')
     .select('*')
     .eq('is_active', true)
 
-  if (!profiles || profiles.length === 0) return { sent: 0 }
+  if (!profilesData || profilesData.length === 0) return summary
 
   const weekStart = nextMonday(new Date())
   const weekLabel = format(weekStart, 'MMMM d, yyyy')
 
-  let sent = 0
-  for (const profile of profiles as Profile[]) {
-    if (!profile.email) continue
-    if (fixedOwnerIds.has(profile.id)) continue
-    try {
-      await getResend().emails.send({
-        from: FROM_EMAIL,
-        to: profile.email,
-        subject: `🅿️ Parking Registration Open — Week of ${format(weekStart, 'MMM d')}`,
-        html: registrationReminderHtml(
-          profile.full_name ?? 'Team Member',
-          weekLabel
-        ),
+  const recipients = (profilesData as Profile[]).filter(
+    (p) => p.email && !fixedOwnerIds.has(p.id)
+  )
+
+  summary.attempted = recipients.length
+  if (recipients.length === 0) return summary
+
+  const results = await mapWithConcurrency(recipients, SEND_CONCURRENCY, async (profile) => {
+    const res = await getResend().emails.send({
+      from:    FROM_EMAIL,
+      replyTo: REPLY_TO,
+      to:      profile.email!,
+      subject: `🅿️ Parking Registration Open — Week of ${format(weekStart, 'MMM d')}`,
+      html:    registrationReminderHtml(
+        profile.full_name ?? 'Team Member',
+        weekLabel
+      ),
+    })
+    if (res.error) throw new Error(res.error.message)
+    return { messageId: res.data?.id ?? null }
+  })
+
+  const now = new Date().toISOString()
+  for (let i = 0; i < results.length; i++) {
+    const profile = recipients[i]
+    const r       = results[i]
+    if (r.status === 'fulfilled') {
+      summary.sent++
+      await logEmail(supabase, {
+        user_id:             profile.id,
+        email:               profile.email!,
+        type:                'reminder',
+        status:              'sent',
+        provider_message_id: r.value.messageId,
+        sent_at:             now,
       })
-      sent++
-    } catch (err) {
-      console.error(`Failed to send reminder to ${profile.email}:`, err)
+    } else {
+      const msg = r.reason instanceof Error ? r.reason.message : String(r.reason)
+      summary.failed++
+      summary.errors.push({ email: profile.email!, message: msg })
+      console.error(`Failed to send reminder to ${profile.email}:`, msg)
+      await logEmail(supabase, {
+        user_id: profile.id,
+        email:   profile.email!,
+        type:    'reminder',
+        status:  'failed',
+        error:   msg,
+      })
     }
   }
-  return { sent }
+
+  return summary
 }
 
 export { registrationReminderHtml, weeklyAllocationHtml, waitlistPromotionHtml }
 
 export async function sendWaitlistPromotionEmail(
-  email: string,
-  name: string,
+  supabase: SupabaseClient,
+  userId:   string | null,
+  email:    string,
+  name:     string,
   spotLabel: string,
-  date: string
-): Promise<void> {
+  date:     string
+): Promise<EmailSendSummary> {
+  const summary: EmailSendSummary = { attempted: 1, sent: 0, failed: 0, errors: [] }
+
   try {
-    await getResend().emails.send({
-      from: FROM_EMAIL,
-      to: email,
+    const res = await getResend().emails.send({
+      from:    FROM_EMAIL,
+      replyTo: REPLY_TO,
+      to:      email,
       subject: `🎉 You Got a Spot! — ${format(new Date(date), 'EEEE, MMM d')}`,
-      html: waitlistPromotionHtml(name, spotLabel, date),
+      html:    waitlistPromotionHtml(name, spotLabel, date),
+    })
+    if (res.error) throw new Error(res.error.message)
+
+    summary.sent = 1
+    await logEmail(supabase, {
+      user_id:             userId,
+      email,
+      type:                'waitlist-promotion',
+      status:              'sent',
+      provider_message_id: res.data?.id ?? null,
+      sent_at:             new Date().toISOString(),
     })
   } catch (err) {
-    console.error(`Failed to send waitlist promotion email to ${email}:`, err)
+    const msg = err instanceof Error ? err.message : String(err)
+    summary.failed = 1
+    summary.errors.push({ email, message: msg })
+    console.error(`Failed to send waitlist promotion email to ${email}:`, msg)
+    await logEmail(supabase, {
+      user_id: userId,
+      email,
+      type:    'waitlist-promotion',
+      status:  'failed',
+      error:   msg,
+    })
   }
+
+  return summary
+}
+
+// Sender for the /api/email-preview admin test endpoint.  Kept here so
+// it shares the same FROM/replyTo conventions and the same email_log
+// pipeline as production sends.
+export async function sendTestEmail(
+  supabase: SupabaseClient,
+  userId:   string | null,
+  opts: { to: string; subject: string; html: string; type: string }
+): Promise<EmailSendSummary> {
+  const summary: EmailSendSummary = { attempted: 1, sent: 0, failed: 0, errors: [] }
+
+  try {
+    const res = await getResend().emails.send({
+      from:    FROM_EMAIL,
+      replyTo: REPLY_TO,
+      to:      opts.to,
+      subject: opts.subject,
+      html:    opts.html,
+    })
+    if (res.error) throw new Error(res.error.message)
+
+    summary.sent = 1
+    await logEmail(supabase, {
+      user_id:             userId,
+      email:               opts.to,
+      type:                `test:${opts.type}`,
+      status:              'sent',
+      provider_message_id: res.data?.id ?? null,
+      sent_at:             new Date().toISOString(),
+    })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    summary.failed = 1
+    summary.errors.push({ email: opts.to, message: msg })
+    console.error(`Failed to send test email to ${opts.to}:`, msg)
+    await logEmail(supabase, {
+      user_id: userId,
+      email:   opts.to,
+      type:    `test:${opts.type}`,
+      status:  'failed',
+      error:   msg,
+    })
+  }
+
+  return summary
 }

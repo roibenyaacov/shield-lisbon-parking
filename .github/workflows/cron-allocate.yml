@@ -1,0 +1,35 @@
+name: "Cron: Friday allocation emails"
+
+on:
+  schedule:
+    # DST-safe pair: exactly one of these hits 08:00 Lisbon time.
+    # UTC+0 (winter): 08:00 UTC = 08:00 WET
+    # UTC+1 (summer): 07:00 UTC = 08:00 WEST
+    - cron: "0 7 * * 5"
+    - cron: "0 8 * * 5"
+  workflow_dispatch: {}
+
+jobs:
+  allocate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Call /api/allocate
+        env:
+          SITE_URL: ${{ secrets.SITE_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          RESPONSE=$(curl -sf -w "\n%{http_code}" \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            "$SITE_URL/api/allocate")
+
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+
+          echo "HTTP $HTTP_CODE"
+          echo "$BODY" | jq . 2>/dev/null || echo "$BODY"
+
+          if [ "$HTTP_CODE" -ge 400 ]; then
+            echo "::error::Allocate endpoint returned HTTP $HTTP_CODE"
+            exit 1
+          fi
