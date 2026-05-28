@@ -83,7 +83,9 @@ export function MyWeek({ userId, fixedSpotId, fixedSpotLabel, userName }: MyWeek
     ])
 
     const allocs = (allocsRes.data ?? []) as (WeeklyAllocation & { spot: ParkingSpot })[]
-    const waitlistedDates = new Set((waitlistRes.data ?? []).map((w: any) => w.date))
+    const waitlistedDates = new Set(
+      ((waitlistRes.data ?? []) as { date: string }[]).map((w) => w.date)
+    )
 
     setDays(dates.map(d => {
       const alloc = allocs.find(a => a.date === d.date)
@@ -224,8 +226,8 @@ export function MyWeek({ userId, fixedSpotId, fixedSpotLabel, userName }: MyWeek
 
       await loadWeek(weekOffset)
       if (expandedDay) await loadDaySpots(expandedDay)
-    } catch (err: any) {
-      toast.error(err.message ?? 'Action failed')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Action failed')
     } finally {
       setActionLoading(null)
       setConfirmAction(null)
