@@ -44,6 +44,14 @@ interface SpotInfo {
   isReleasedByCurrentUserFixedSpot: boolean
 }
 
+type DateRow = {
+  date: string
+}
+
+type SpotReleaseSpotRow = {
+  spot_id: number
+}
+
 export function MyWeek({ userId, fixedSpotId, fixedSpotLabel, userName }: MyWeekProps) {
   const [weekOffset, setWeekOffset] = useState(0)
   const [days, setDays] = useState<DayInfo[]>([])
@@ -93,8 +101,8 @@ export function MyWeek({ userId, fixedSpotId, fixedSpotLabel, userName }: MyWeek
     ])
 
     const allocs = (allocsRes.data ?? []) as (WeeklyAllocation & { spot: ParkingSpot })[]
-    const waitlistedDates = new Set((waitlistRes.data ?? []).map((w: any) => w.date))
-    const fixedReleasedDates = new Set((releasesRes.data ?? []).map((r: any) => r.date))
+    const waitlistedDates = new Set(((waitlistRes.data ?? []) as DateRow[]).map((w) => w.date))
+    const fixedReleasedDates = new Set(((releasesRes.data ?? []) as DateRow[]).map((r) => r.date))
 
     setDays(dates.map(d => {
       const alloc = allocs.find(a => a.date === d.date)
@@ -148,7 +156,7 @@ export function MyWeek({ userId, fixedSpotId, fixedSpotLabel, userName }: MyWeek
 
     const spots = (spotsRes.data ?? []) as (ParkingSpot & { fixed_user: { full_name: string } | null })[]
     const allocs = (allocsRes.data ?? []) as (WeeklyAllocation & { user: Profile })[]
-    const releasedFixedSpotIds = new Set((releasesRes.data ?? []).map((r: any) => r.spot_id))
+    const releasedFixedSpotIds = new Set(((releasesRes.data ?? []) as SpotReleaseSpotRow[]).map((r) => r.spot_id))
 
     setDaySpots(spots.map(s => {
       const alloc = allocs.find(a => a.spot_id === s.id)
@@ -255,8 +263,8 @@ export function MyWeek({ userId, fixedSpotId, fixedSpotLabel, userName }: MyWeek
 
       await loadWeek(weekOffset)
       if (expandedDay) await loadDaySpots(expandedDay)
-    } catch (err: any) {
-      toast.error(err.message ?? 'Action failed')
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Action failed')
     } finally {
       setActionLoading(null)
       setConfirmAction(null)

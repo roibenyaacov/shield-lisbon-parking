@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import type { Profile, ParkingSpot, WeeklyRequest, WeeklyAllocationInsert, WaitlistInsert } from '@/types/db'
+import type { Profile, ParkingSpot, WeeklyRequest } from '@/types/db'
 import { TEAM_DAY_MAP, DAY_NAMES, DAY_KEYS, MAX_DAYS_PER_USER } from '@/lib/constants'
 import { addDays, format, parseISO } from 'date-fns'
 
@@ -223,14 +223,14 @@ export async function saveAllocations(
   if (allocations.length > 0) {
     const { error } = await supabase
       .from('weekly_allocations')
-      .insert(allocations as any)
+      .insert(allocations)
     if (error) throw new Error(`Failed to insert allocations: ${error.message}`)
   }
 
   if (waitlisted.length > 0) {
     const { error } = await supabase
       .from('waitlist')
-      .insert(waitlisted as any)
+      .insert(waitlisted)
     if (error) throw new Error(`Failed to insert waitlist: ${error.message}`)
   }
 }
