@@ -22,14 +22,23 @@ export default function ResetPasswordPage() {
 
   useEffect(() => {
     supabase.auth.onAuthStateChange((event) => {
-      if (event === 'PASSWORD_RECOVERY') {
+      if (event === 'PASSWORD_RECOVERY' || event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
         setReady(true)
       }
+    })
+
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) setReady(true)
     })
   }, [supabase])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+
+    if (!ready) {
+      setError('Your reset link has expired or is invalid. Please request a new one.')
+      return
+    }
 
     if (password !== confirmPassword) {
       setError('Passwords do not match.')
