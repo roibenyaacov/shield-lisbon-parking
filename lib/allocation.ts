@@ -46,20 +46,24 @@ export async function runAllocation(
   supabase: SupabaseClient,
   weekStart: string
 ): Promise<{ allocations: AllocationEntry[]; waitlisted: { user_id: string; date: string }[] }> {
+  const weekDates = Array.from({ length: 5 }, (_, i) =>
+    format(addDays(parseISO(weekStart), i), 'yyyy-MM-dd')
+  )
+
   const [spotsRes, requestsRes, profilesRes, releasesRes] = await Promise.all([
     supabase.from('parking_spots').select('*').eq('is_active', true),
     supabase.from('weekly_requests').select('*').eq('week_start', weekStart),
     supabase.from('profiles').select('*').eq('is_active', true),
-    supabase.from('spot_releases').select('*').eq('week_start', weekStart),
+    supabase.from('spot_releases').select('user_id, date').in('date', weekDates),
   ])
 
   const spots = (spotsRes.data ?? []) as ParkingSpot[]
   const requests = (requestsRes.data ?? []) as WeeklyRequest[]
   const profiles = (profilesRes.data ?? []) as Profile[]
-  const releases = (releasesRes.data ?? []) as { user_id: string }[]
+  const releases = (releasesRes.data ?? []) as { user_id: string; date: string }[]
 
   const profileMap = new Map(profiles.map((p) => [p.id, p]))
-  const releasedUserIds = new Set(releases.map((r) => r.user_id))
+  const releasedFixedDates = new Set(releases.map((r) => `${r.user_id}:${r.date}`))
 
   const userDayCount = new Map<string, number>()
   const allAllocations: AllocationEntry[] = []
@@ -78,7 +82,8 @@ export async function runAllocation(
 
     const fixedSpots = spots.filter((s) => s.fixed_user_id)
     for (const spot of fixedSpots) {
-      if (!releasedUserIds.has(spot.fixed_user_id!)) {
+      const releaseKey = `${spot.fixed_user_id!}:${dateStr}`
+      if (!releasedFixedDates.has(releaseKey)) {
         occupiedToday.add(spot.id)
         allAllocations.push({
           user_id: spot.fixed_user_id!,
@@ -101,7 +106,8 @@ export async function runAllocation(
       const profile = profileMap.get(req.user_id)
       if (!profile) continue
       const hasFixedSpot = fixedSpots.some((s) => s.fixed_user_id === req.user_id)
-      if (hasFixedSpot && !releasedUserIds.has(req.user_id)) continue
+      const releasedOwnFixedSpotToday = releasedFixedDates.has(`${req.user_id}:${dateStr}`)
+      if (hasFixedSpot && !releasedOwnFixedSpotToday) continue
 
       dayRequests.push({
         userId: req.user_id,

@@ -38,83 +38,48 @@ export async function POST(request: Request) {
     // ─────────────────────────────────────────────────────────────────
 
     const serviceClient = await createServiceClient()
+    const { data: fixedSpot } = await serviceClient
+      .from('parking_spots')
+      .select('id')
+      .eq('id', spot_id)
+      .eq('fixed_user_id', user.id)
+      .maybeSingle()
+
+    const ownsFixedSpot = !!fixedSpot
 
     // ── RECLAIM ───────────────────────────────────────────────────────
     if (action === 'reclaim') {
-      const { data: fixedSpot } = await serviceClient
-        .from('parking_spots')
-        .select('id')
-        .eq('id', spot_id)
-        .eq('fixed_user_id', user.id)
-        .single()
-
-      if (!fixedSpot) {
+      if (!ownsFixedSpot) {
         return NextResponse.json({ error: 'You do not own this fixed spot' }, { status: 403 })
       }
 
-      const { data: existingAlloc } = await serviceClient
-        .from('weekly_allocations')
-        .select('id')
-        .eq('spot_id', spot_id)
-        .eq('date', date)
-        .maybeSingle()
-
-      if (existingAlloc) {
-        return NextResponse.json({ error: 'Spot is already taken for this day' }, { status: 409 })
-      }
-
-      const { data: userAlloc } = await serviceClient
-        .from('weekly_allocations')
-        .select('id')
-        .eq('user_id', user.id)
-        .eq('date', date)
-        .maybeSingle()
-
-      if (userAlloc) {
-        return NextResponse.json({ error: 'You already have a spot for this day' }, { status: 409 })
-      }
-
-      const { error: insertError } = await serviceClient
-        .from('weekly_allocations')
-        .insert({
-          user_id: user.id,
-          spot_id,
-          date,
-          pass_number: 0,
+      const { data: reclaimRpcResult, error: reclaimRpcError } = await serviceClient
+        .rpc('reclaim_fixed_spot', {
+          p_user_id: user.id,
+          p_spot_id: spot_id,
+          p_date:    date,
         })
 
-      if (insertError) {
-        if (insertError.code === '23505') {
-          return NextResponse.json({ error: 'Spot already taken' }, { status: 409 })
-        }
-        return NextResponse.json({ error: 'Unexpected error' }, { status: 500 })
+      if (reclaimRpcError) {
+        return NextResponse.json({ error: reclaimRpcError.message }, { status: 500 })
+      }
+
+      const reclaimResult = reclaimRpcResult as {
+        success?: boolean
+        reclaimed?: boolean
+        error?: string
+      }
+
+      if (reclaimResult.error) {
+        return NextResponse.json({ error: reclaimResult.error }, { status: 409 })
       }
 
       return NextResponse.json({ success: true, reclaimed: true })
     }
 
-    // ── RELEASE (atomic via RPC) ──────────────────────────────────────
-    const { data: rpcResult, error: rpcError } = await serviceClient
-      .rpc('release_and_promote', {
-        p_user_id: user.id,
-        p_spot_id: spot_id,
-        p_date:    date,
-      })
-
-    if (rpcError) {
-      return NextResponse.json({ error: rpcError.message }, { status: 500 })
-    }
-
-    const result = rpcResult as {
-      released?: boolean
-      promoted_user_id?: string | null
-      error?: string
-    }
-
-    // Fixed spot owner releasing a day that was never explicitly allocated
-    // (the spot is in its default "reserved" state with no allocation row).
-    // Use the atomic release_fixed_and_promote RPC instead of manual queries.
-    if (result.error === 'You do not have this allocation') {
+    // Fixed spot releases need a durable per-day marker even when there is
+    // no allocation row yet (the default reserved state before allocation).
+    if (ownsFixedSpot) {
       const { data: fixedRpcResult, error: fixedRpcError } = await serviceClient
         .rpc('release_fixed_and_promote', {
           p_user_id: user.id,
@@ -133,7 +98,8 @@ export async function POST(request: Request) {
       }
 
       if (fixedResult.error) {
-        return NextResponse.json({ error: fixedResult.error }, { status: 403 })
+        const status = fixedResult.error === 'Spot is already taken for this day' ? 409 : 403
+        return NextResponse.json({ error: fixedResult.error }, { status })
       }
 
       if (fixedResult.promoted_user_id) {
@@ -145,6 +111,24 @@ export async function POST(request: Request) {
         released: true,
         promoted_user: fixedResult.promoted_user_id ?? null,
       })
+    }
+
+    // ── RELEASE (atomic via RPC) ──────────────────────────────────────
+    const { data: rpcResult, error: rpcError } = await serviceClient
+      .rpc('release_and_promote', {
+        p_user_id: user.id,
+        p_spot_id: spot_id,
+        p_date:    date,
+      })
+
+    if (rpcError) {
+      return NextResponse.json({ error: rpcError.message }, { status: 500 })
+    }
+
+    const result = rpcResult as {
+      released?: boolean
+      promoted_user_id?: string | null
+      error?: string
     }
 
     if (result.error) {

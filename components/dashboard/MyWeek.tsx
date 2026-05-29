@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Card } from '@/components/ui/Card'
-import { Check, Clock, ChevronRight, ChevronLeft, ChevronDown, Zap, Bike, LogOut, PlusCircle, Lock, Car } from 'lucide-react'
+import { Check, Clock, ChevronRight, ChevronLeft, ChevronDown, Zap, Bike, Lock, Car, Unlock } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { format, addDays, startOfWeek, addWeeks, isBefore, startOfDay, isToday } from 'date-fns'
 import { DAY_LABELS, DAY_NAMES } from '@/lib/constants'
@@ -25,6 +25,7 @@ interface DayInfo {
   spotPriority: string | null
   spotId: number | null
   waitlisted: boolean
+  fixedReleased: boolean
   isPast: boolean
   isToday: boolean
 }
@@ -40,6 +41,7 @@ interface SpotInfo {
   isAvailable: boolean
   isFixedAndOccupiedByOwner: boolean
   isCurrentUserFixedSpot: boolean
+  isReleasedByCurrentUserFixedSpot: boolean
 }
 
 export function MyWeek({ userId, fixedSpotId, fixedSpotLabel, userName }: MyWeekProps) {
@@ -69,7 +71,7 @@ export function MyWeek({ userId, fixedSpotId, fixedSpotLabel, userName }: MyWeek
       }
     })
 
-    const [allocsRes, waitlistRes] = await Promise.all([
+    const [allocsRes, waitlistRes, releasesRes] = await Promise.all([
       supabase
         .from('weekly_allocations')
         .select('*, spot:parking_spots(*)')
@@ -80,23 +82,34 @@ export function MyWeek({ userId, fixedSpotId, fixedSpotLabel, userName }: MyWeek
         .select('date')
         .eq('user_id', userId)
         .in('date', dates.map(d => d.date)),
+      fixedSpotId != null
+        ? supabase
+          .from('spot_releases')
+          .select('date')
+          .eq('user_id', userId)
+          .eq('spot_id', fixedSpotId)
+          .in('date', dates.map(d => d.date))
+        : Promise.resolve({ data: [] }),
     ])
 
     const allocs = (allocsRes.data ?? []) as (WeeklyAllocation & { spot: ParkingSpot })[]
     const waitlistedDates = new Set((waitlistRes.data ?? []).map((w: any) => w.date))
+    const fixedReleasedDates = new Set((releasesRes.data ?? []).map((r: any) => r.date))
 
     setDays(dates.map(d => {
       const alloc = allocs.find(a => a.date === d.date)
+      const fixedReleased = fixedReleasedDates.has(d.date)
       return {
         ...d,
-        spotLabel: alloc?.spot?.label ?? (fixedSpotId ? (fixedSpotLabel ?? null) : null),
+        spotLabel: alloc?.spot?.label ?? (fixedSpotId && !fixedReleased ? (fixedSpotLabel ?? null) : null),
         spotPriority: alloc?.spot?.priority ?? null,
-        spotId: alloc?.spot?.id ?? (fixedSpotId ?? null),
+        spotId: alloc?.spot?.id ?? (fixedSpotId && !fixedReleased ? fixedSpotId : null),
         waitlisted: waitlistedDates.has(d.date),
+        fixedReleased,
       }
     }))
     setLoading(false)
-  }, [userId, supabase])
+  }, [userId, fixedSpotId, fixedSpotLabel, supabase])
 
   useEffect(() => {
     loadWeek(weekOffset)
@@ -111,23 +124,36 @@ export function MyWeek({ userId, fixedSpotId, fixedSpotLabel, userName }: MyWeek
         if (expandedDay) loadDaySpots(expandedDay)
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'waitlist' }, () => loadWeek(weekOffset))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'spot_releases' }, () => {
+        loadWeek(weekOffset)
+        if (expandedDay) loadDaySpots(expandedDay)
+      })
       .subscribe()
     return () => { supabase.removeChannel(channel) }
   }, [supabase, loadWeek, weekOffset, expandedDay])
 
   const loadDaySpots = async (date: string) => {
     setSpotsLoading(true)
-    const [spotsRes, allocsRes] = await Promise.all([
+    const [spotsRes, allocsRes, releasesRes] = await Promise.all([
       supabase.from('parking_spots').select('*, fixed_user:profiles!parking_spots_fixed_user_id_fkey(full_name)').eq('is_active', true).order('label'),
       supabase.from('weekly_allocations').select('*, user:profiles(*)').eq('date', date),
+      fixedSpotId != null
+        ? supabase
+          .from('spot_releases')
+          .select('spot_id')
+          .eq('user_id', userId)
+          .eq('date', date)
+        : Promise.resolve({ data: [] }),
     ])
 
     const spots = (spotsRes.data ?? []) as (ParkingSpot & { fixed_user: { full_name: string } | null })[]
     const allocs = (allocsRes.data ?? []) as (WeeklyAllocation & { user: Profile })[]
+    const releasedFixedSpotIds = new Set((releasesRes.data ?? []).map((r: any) => r.spot_id))
 
     setDaySpots(spots.map(s => {
       const alloc = allocs.find(a => a.spot_id === s.id)
       const isOwnerFixedSpot = fixedSpotId != null && fixedSpotId === s.id
+      const isReleasedByCurrentUserFixedSpot = isOwnerFixedSpot && releasedFixedSpotIds.has(s.id)
       const isSpot40ReservedFallback = s.label === '40'
       const isReserved = !!s.fixed_user_id || !!s.reserved_name || isSpot40ReservedFallback
       const isOccupiedByFixedOwner = isReserved && (!alloc || alloc?.user_id === s.fixed_user_id)
@@ -142,6 +168,7 @@ export function MyWeek({ userId, fixedSpotId, fixedSpotLabel, userName }: MyWeek
         isAvailable: !alloc,
         isFixedAndOccupiedByOwner: isOccupiedByFixedOwner && !isOwnerFixedSpot,
         isCurrentUserFixedSpot: isOwnerFixedSpot,
+        isReleasedByCurrentUserFixedSpot,
       }
     }))
     setSpotsLoading(false)
@@ -164,7 +191,11 @@ export function MyWeek({ userId, fixedSpotId, fixedSpotLabel, userName }: MyWeek
     if (spot.isCurrentUser) {
       setConfirmAction({ spotId: spot.id, date, type: 'release' })
     } else if (spot.isCurrentUserFixedSpot && spot.isAvailable) {
-      setConfirmAction({ spotId: spot.id, date, type: 'release' })
+      setConfirmAction({
+        spotId: spot.id,
+        date,
+        type: spot.isReleasedByCurrentUserFixedSpot ? 'reclaim' : 'release',
+      })
     } else if (spot.isAvailable && !spot.isFixed) {
       const userHasSpotToday = days.find(d => d.date === date)?.spotId
       if (userHasSpotToday) {
@@ -377,12 +408,14 @@ export function MyWeek({ userId, fixedSpotId, fixedSpotLabel, userName }: MyWeek
                         <div className={`w-9 h-9 rounded-lg flex items-center justify-center text-xs font-bold ${
                           day.spotLabel
                             ? 'bg-green-500 text-white'
-                            : day.waitlisted
+                            : day.fixedReleased || day.waitlisted
                               ? 'bg-amber-400 text-white'
                               : 'bg-slate-100 text-slate-400'
                         }`}>
                           {day.spotLabel ? (
                             <Car className="w-4.5 h-4.5" />
+                          ) : day.fixedReleased ? (
+                            <Unlock className="w-4 h-4" />
                           ) : day.waitlisted ? (
                             <Clock className="w-4 h-4" />
                           ) : '–'}
@@ -400,6 +433,8 @@ export function MyWeek({ userId, fixedSpotId, fixedSpotLabel, userName }: MyWeek
                       <div className="flex items-center gap-2">
                         {day.spotLabel ? (
                           <span className="text-xs font-semibold text-green-700">{day.spotLabel}</span>
+                        ) : day.fixedReleased ? (
+                          <span className="text-xs font-semibold text-amber-600">Released</span>
                         ) : day.waitlisted ? (
                           <span className="text-xs font-semibold text-amber-600">Waitlist</span>
                         ) : (
@@ -451,7 +486,8 @@ export function MyWeek({ userId, fixedSpotId, fixedSpotLabel, userName }: MyWeek
                               <div className="grid grid-cols-4 gap-2">
                                 {daySpots.map((spot) => {
                                   const isOwnFixed = spot.isCurrentUserFixedSpot
-                                  const showAsOwn = spot.isCurrentUser || (isOwnFixed && spot.isAvailable)
+                                  const showAsReclaimable = isOwnFixed && spot.isAvailable && spot.isReleasedByCurrentUserFixedSpot
+                                  const showAsOwn = spot.isCurrentUser || (isOwnFixed && spot.isAvailable && !showAsReclaimable)
                                   const isClickable = !day.isPast && (
                                     spot.isCurrentUser ||
                                     (isOwnFixed && spot.isAvailable) ||
@@ -472,6 +508,8 @@ export function MyWeek({ userId, fixedSpotId, fixedSpotLabel, userName }: MyWeek
                                       className={`rounded-xl border-2 p-2 text-center transition-all relative ${
                                         showAsOwn
                                           ? 'border-blue-500 bg-blue-50 shadow-md shadow-blue-600/10'
+                                          : showAsReclaimable
+                                            ? 'border-amber-400 bg-amber-50'
                                           : spot.isFixedAndOccupiedByOwner
                                             ? 'border-red-400 bg-red-50'
                                             : spot.isAvailable
@@ -486,17 +524,20 @@ export function MyWeek({ userId, fixedSpotId, fixedSpotLabel, userName }: MyWeek
                                       )}
                                       <p className={`text-lg font-bold ${
                                         showAsOwn ? 'text-blue-600'
+                                        : showAsReclaimable ? 'text-amber-600'
                                         : spot.isFixedAndOccupiedByOwner ? 'text-red-500'
                                         : spot.isAvailable ? 'text-green-600'
                                         : 'text-red-400'
                                       }`}>{spot.label}</p>
                                       <p className={`text-[10px] font-medium truncate ${
                                         showAsOwn ? 'text-blue-500'
+                                        : showAsReclaimable ? 'text-amber-500'
                                         : spot.isFixedAndOccupiedByOwner ? 'text-red-400'
                                         : spot.isAvailable ? 'text-green-500'
                                         : 'text-red-400'
                                       }`}>
                                         {showAsOwn ? (userName?.split(' ')[0] ?? 'You')
+                                          : showAsReclaimable ? 'Reclaim'
                                           : spot.isFixedAndOccupiedByOwner ? (spot.fixedOwnerName?.split(' ')[0] ?? 'Reserved')
                                           : spot.isAvailable ? 'Available'
                                           : spot.occupantName?.split(' ')[0] ?? 'Taken'}
@@ -504,8 +545,10 @@ export function MyWeek({ userId, fixedSpotId, fixedSpotLabel, userName }: MyWeek
                                       {spot.isFixedAndOccupiedByOwner && (
                                         <Lock className="w-3 h-3 text-red-400 mx-auto mt-0.5" />
                                       )}
-                                      {isOwnFixed && showAsOwn && (
-                                        <Lock className="w-3 h-3 text-blue-400 mx-auto mt-0.5" />
+                                      {isOwnFixed && (showAsOwn || showAsReclaimable) && (
+                                        showAsReclaimable
+                                          ? <Unlock className="w-3 h-3 text-amber-400 mx-auto mt-0.5" />
+                                          : <Lock className="w-3 h-3 text-blue-400 mx-auto mt-0.5" />
                                       )}
                                       {!spot.isFixedAndOccupiedByOwner && !showAsOwn && spot.priority === 'ev' && (
                                         <Zap className="w-3 h-3 text-green-500 mx-auto mt-0.5" />
