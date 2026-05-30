@@ -16,23 +16,18 @@ async function handleAllocate(request: NextRequest, weekStartOverride?: string) 
   const isCronAuthed = !!cronSecret && authHeader === `Bearer ${cronSecret}`
 
   // ── DST-safe cron guard ────────────────────────────────────────────────
-  // Vercel cron runs in UTC and has no timezone support, so we schedule
-  // the cron at BOTH 07:00 UTC and 08:00 UTC each Friday.  Exactly one of
-  // those fires at 08:00 Lisbon time depending on whether DST is active.
+  // GitHub Actions schedules run in UTC, so we schedule the cron at BOTH
+  // 07:00 UTC and 08:00 UTC each Friday.  Exactly one of those fires at
+  // 08:00 Lisbon time depending on whether DST is active.
   // This guard ignores the run unless the current Lisbon time matches the
   // target (Friday 08:00).  Admin manual triggers (non-cron auth) bypass
   // this so they can re-run anytime.
   if (isCronAuthed) {
     const nowLisbon = toZonedTime(new Date(), LISBON_TIMEZONE)
     const lisbonHour = nowLisbon.getHours()
-    // Widened window: accept ALLOCATION_HOUR or ALLOCATION_HOUR+1 to tolerate
-    // cron-jitter that crosses the hour boundary mid-execution.  The
-    // idempotency guard further down (`existingAlloc` check) prevents a
-    // duplicate run in the second hour from creating a second allocation.
     if (
       nowLisbon.getDay() !== ALLOCATION_DAY ||
-      lisbonHour < ALLOCATION_HOUR ||
-      lisbonHour > ALLOCATION_HOUR + 1
+      lisbonHour !== ALLOCATION_HOUR
     ) {
       return NextResponse.json({
         skipped: true,

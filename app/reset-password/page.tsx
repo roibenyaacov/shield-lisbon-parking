@@ -17,42 +17,71 @@ export default function ResetPasswordPage() {
   const [loading, setLoading] = useState(false)
   const [success, setSuccess] = useState(false)
   const [ready, setReady] = useState(false)
+  const [authChecking, setAuthChecking] = useState(true)
   const router = useRouter()
-  const supabase = createClient()
+  const [supabase] = useState(() => createClient())
 
   useEffect(() => {
-    const hash = window.location.hash
-    if (hash) {
-      const params = new URLSearchParams(hash.substring(1))
-      const accessToken = params.get('access_token')
-      const refreshToken = params.get('refresh_token')
-      if (accessToken && refreshToken) {
-        supabase.auth.setSession({
-          access_token: accessToken,
-          refresh_token: refreshToken,
-        }).then(({ error }) => {
+    let cancelled = false
+    let unsubscribe: (() => void) | null = null
+
+    const finishChecking = () => {
+      if (!cancelled) setAuthChecking(false)
+    }
+
+    const initialiseSession = async () => {
+      const hash = window.location.hash
+      if (hash) {
+        const params = new URLSearchParams(hash.substring(1))
+        const accessToken = params.get('access_token')
+        const refreshToken = params.get('refresh_token')
+        if (accessToken && refreshToken) {
+          const { error } = await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken,
+          })
+          if (cancelled) return
           if (error) {
             setError('Reset link is invalid or expired. Please request a new one.')
           } else {
             setReady(true)
             window.history.replaceState(null, '', '/reset-password')
           }
-        })
-        return
+          finishChecking()
+          return
+        }
       }
+
+      const { data: { subscription } } = supabase.auth.onAuthStateChange(
+        (_event, session) => {
+          if (session && !cancelled) {
+            setReady(true)
+            setAuthChecking(false)
+          }
+        }
+      )
+      unsubscribe = () => subscription.unsubscribe()
+
+      const { data: { session } } = await supabase.auth.getSession()
+      if (cancelled) return
+      if (session) setReady(true)
+      finishChecking()
     }
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event, session) => {
-        if (session) setReady(true)
-      }
-    )
+    initialiseSession()
 
-    return () => subscription.unsubscribe()
+    return () => {
+      cancelled = true
+      unsubscribe?.()
+    }
   }, [supabase])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+
+    if (authChecking) {
+      return
+    }
 
     if (!ready) {
       setError('Your reset link has expired or is invalid. Please request a new one.')
@@ -189,7 +218,7 @@ export default function ResetPasswordPage() {
                 </motion.div>
               )}
 
-              <Button type="submit" isLoading={loading} fullWidth size="lg">
+              <Button type="submit" isLoading={loading || authChecking} fullWidth size="lg">
                 Update Password
               </Button>
             </motion.form>
