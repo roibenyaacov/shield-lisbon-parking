@@ -1,7 +1,14 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import type { Profile, ParkingSpot, WeeklyRequest, WeeklyAllocationInsert, WaitlistInsert } from '@/types/db'
+import type { Profile, ParkingSpot, WeeklyRequest, WaitlistInsert } from '@/types/db'
 import { TEAM_DAY_MAP, DAY_NAMES, DAY_KEYS, MAX_DAYS_PER_USER } from '@/lib/constants'
 import { addDays, format, parseISO } from 'date-fns'
+
+interface AllocationEntry {
+  user_id: string
+  spot_id: number
+  date: string
+  pass_number: number
+}
 
 interface UserDayRequest {
   userId: string
@@ -38,7 +45,7 @@ function pickSpot(
 export async function runAllocation(
   supabase: SupabaseClient,
   weekStart: string
-): Promise<{ allocations: WeeklyAllocationInsert[]; waitlisted: WaitlistInsert[] }> {
+): Promise<{ allocations: AllocationEntry[]; waitlisted: WaitlistInsert[] }> {
   const [spotsRes, requestsRes, profilesRes, releasesRes] = await Promise.all([
     supabase.from('parking_spots').select('*').eq('is_active', true),
     supabase.from('weekly_requests').select('*').eq('week_start', weekStart),
@@ -63,7 +70,7 @@ export async function runAllocation(
   )
 
   const userDayCount = new Map<string, number>()
-  const allAllocations: WeeklyAllocationInsert[] = []
+  const allAllocations: AllocationEntry[] = []
   const allWaitlisted: WaitlistInsert[] = []
   const spotOccupied = new Map<string, Set<number>>()
 
@@ -206,7 +213,7 @@ export async function runAllocation(
 export async function saveAllocations(
   supabase: SupabaseClient,
   weekStart: string,
-  allocations: WeeklyAllocationInsert[],
+  allocations: AllocationEntry[],
   waitlisted: WaitlistInsert[]
 ): Promise<void> {
   const weekDates = Array.from({ length: 5 }, (_, i) =>
