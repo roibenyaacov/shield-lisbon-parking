@@ -10,6 +10,11 @@ interface AllocationEntry {
   pass_number: number
 }
 
+export interface AllocationSaveResult {
+  saved: boolean
+  alreadyRun: boolean
+}
+
 interface UserDayRequest {
   userId: string
   profile: Profile
@@ -204,27 +209,20 @@ export async function saveAllocations(
   weekStart: string,
   allocations: AllocationEntry[],
   waitlisted: { user_id: string; date: string }[]
-): Promise<void> {
-  const weekDates = Array.from({ length: 5 }, (_, i) =>
-    format(addDays(parseISO(weekStart), i), 'yyyy-MM-dd')
-  )
+): Promise<AllocationSaveResult> {
+  const { data, error } = await supabase.rpc('save_weekly_allocation_results', {
+    p_week_start:  weekStart,
+    p_allocations: allocations,
+    p_waitlisted:  waitlisted,
+  })
 
-  for (const date of weekDates) {
-    await supabase.from('weekly_allocations').delete().eq('date', date)
-    await supabase.from('waitlist').delete().eq('date', date)
+  if (error) {
+    throw new Error(`Failed to save allocations: ${error.message}`)
   }
 
-  if (allocations.length > 0) {
-    const { error } = await supabase
-      .from('weekly_allocations')
-      .insert(allocations as any)
-    if (error) throw new Error(`Failed to insert allocations: ${error.message}`)
-  }
-
-  if (waitlisted.length > 0) {
-    const { error } = await supabase
-      .from('waitlist')
-      .insert(waitlisted as any)
-    if (error) throw new Error(`Failed to insert waitlist: ${error.message}`)
+  const result = data as { saved?: boolean; already_run?: boolean } | null
+  return {
+    saved:      result?.saved === true,
+    alreadyRun: result?.already_run === true,
   }
 }

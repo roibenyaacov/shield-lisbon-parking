@@ -102,7 +102,16 @@ async function handleAllocate(request: NextRequest, weekStartOverride?: string) 
   }
 
   const { allocations, waitlisted } = await runAllocation(serviceClient, weekStart)
-  await saveAllocations(serviceClient, weekStart, allocations, waitlisted)
+  const saveResult = await saveAllocations(serviceClient, weekStart, allocations, waitlisted)
+
+  if (saveResult.alreadyRun) {
+    return NextResponse.json({
+      success:      true,
+      week_start:   weekStart,
+      already_run:  true,
+      message:      'Allocations already exist for this week.',
+    })
+  }
 
   // Per-user send errors are already captured inside the summary and
   // never reach this catch.  This try/catch only fires if the function
