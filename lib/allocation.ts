@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import type { Profile, ParkingSpot, WeeklyRequest, WeeklyAllocationInsert, WaitlistInsert } from '@/types/db'
+import type { Profile, ParkingSpot, WeeklyRequest } from '@/types/db'
 import { TEAM_DAY_MAP, DAY_NAMES, DAY_KEYS, MAX_DAYS_PER_USER } from '@/lib/constants'
 import { addDays, format, parseISO } from 'date-fns'
 
