@@ -20,19 +20,16 @@ export async function GET(request: NextRequest) {
     if (isCronAuthed) {
       const nowLisbon  = toZonedTime(new Date(), LISBON_TIMEZONE)
       const lisbonHour = nowLisbon.getHours()
-      // Widened window: accept REQUEST_OPEN_HOUR or REQUEST_OPEN_HOUR+1 so
-      // a cron run that crosses the hour boundary mid-execution is not
-      // silently skipped.  The reminder is naturally idempotent at the
-      // recipient level (an extra reminder email is fine) so duplicates
-      // inside this window are tolerable.
+      // Keep this exact: the GitHub workflow intentionally calls this endpoint
+      // at two adjacent UTC hours for DST.  In summer, accepting the following
+      // Lisbon hour would allow both scheduled jobs to send reminders.
       if (
         nowLisbon.getDay() !== REQUEST_OPEN_DAY ||
-        lisbonHour < REQUEST_OPEN_HOUR ||
-        lisbonHour > REQUEST_OPEN_HOUR + 1
+        lisbonHour !== REQUEST_OPEN_HOUR
       ) {
         return NextResponse.json({
           skipped: true,
-          reason:  'Not the target Lisbon window for reminders',
+          reason:  'Not the target Lisbon hour for reminders',
           lisbon_day:  nowLisbon.getDay(),
           lisbon_hour: lisbonHour,
         })
