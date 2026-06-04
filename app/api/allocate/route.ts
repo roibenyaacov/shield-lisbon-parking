@@ -25,14 +25,15 @@ async function handleAllocate(request: NextRequest, weekStartOverride?: string) 
   if (isCronAuthed) {
     const nowLisbon = toZonedTime(new Date(), LISBON_TIMEZONE)
     const lisbonHour = nowLisbon.getHours()
-    // Widened window: accept ALLOCATION_HOUR or ALLOCATION_HOUR+1 to tolerate
-    // cron-jitter that crosses the hour boundary mid-execution.  The
-    // idempotency guard further down (`existingAlloc` check) prevents a
-    // duplicate run in the second hour from creating a second allocation.
+    // Day guard: only run on Friday.
+    // Hour guard is intentionally broad (6-12) to tolerate GitHub
+    // Actions cron delays of up to several hours.  The idempotency
+    // guard further down (`existingAlloc` check) prevents duplicate
+    // allocations if the endpoint is called more than once.
     if (
       nowLisbon.getDay() !== ALLOCATION_DAY ||
-      lisbonHour < ALLOCATION_HOUR ||
-      lisbonHour > ALLOCATION_HOUR + 1
+      lisbonHour < 6 ||
+      lisbonHour > 12
     ) {
       return NextResponse.json({
         skipped: true,

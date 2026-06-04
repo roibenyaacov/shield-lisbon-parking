@@ -20,15 +20,14 @@ export async function GET(request: NextRequest) {
     if (isCronAuthed) {
       const nowLisbon  = toZonedTime(new Date(), LISBON_TIMEZONE)
       const lisbonHour = nowLisbon.getHours()
-      // Widened window: accept REQUEST_OPEN_HOUR or REQUEST_OPEN_HOUR+1 so
-      // a cron run that crosses the hour boundary mid-execution is not
-      // silently skipped.  The reminder is naturally idempotent at the
-      // recipient level (an extra reminder email is fine) so duplicates
-      // inside this window are tolerable.
+      // Day guard: only run on Wednesday.
+      // Hour guard is intentionally broad (15-23) to tolerate GitHub
+      // Actions cron delays of up to several hours.  The reminder is
+      // naturally idempotent — an extra send is harmless.
       if (
         nowLisbon.getDay() !== REQUEST_OPEN_DAY ||
-        lisbonHour < REQUEST_OPEN_HOUR ||
-        lisbonHour > REQUEST_OPEN_HOUR + 1
+        lisbonHour < 15 ||
+        lisbonHour > 23
       ) {
         return NextResponse.json({
           skipped: true,
