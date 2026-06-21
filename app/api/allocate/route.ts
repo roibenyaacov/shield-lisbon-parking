@@ -81,19 +81,20 @@ async function handleAllocate(request: NextRequest, weekStartOverride?: string) 
   const weekStart = weekStartOverride ?? format(nextMonday(new Date()), 'yyyy-MM-dd')
 
   // ── Idempotency guard ─────────────────────────────────────────────────
-  // Check specifically for the first day of the target week.  Checking
-  // the full range (gte weekStart, lte weekEnd) is too broad: a manually
-  // created allocation for any mid-week date would silently skip the
-  // entire allocation run.  Checking only weekStart means a stray
-  // mid-week row doesn't block the cron.
-  const { data: existingAlloc } = await serviceClient
-    .from('weekly_allocations')
-    .select('id')
-    .eq('date', weekStart)
-    .limit(1)
+  // Use the explicit run marker written in the same transaction as the
+  // weekly allocation results. Manual claims/reclaims must not make cron
+  // skip the company-wide weekly run.
+  const { data: allocationRun, error: allocationRunError } = await serviceClient
+    .from('allocation_runs')
+    .select('week_start')
+    .eq('week_start', weekStart)
     .maybeSingle()
 
-  if (existingAlloc) {
+  if (allocationRunError) {
+    throw new Error(`Failed to check allocation run: ${allocationRunError.message}`)
+  }
+
+  if (allocationRun) {
     return NextResponse.json({
       success:      true,
       week_start:   weekStart,
