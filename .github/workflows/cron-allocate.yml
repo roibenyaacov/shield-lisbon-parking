@@ -2,12 +2,12 @@ name: "Cron: Friday allocation emails"
 
 on:
   schedule:
-    # Single schedule at 07:00 UTC.
-    # Winter (WET = UTC+0): 07:00 local → early morning allocation
-    # Summer (WEST = UTC+1): 08:00 local → morning allocation
-    # GitHub Actions can delay 30-90 min, so the API guard accepts
-    # any hour on Friday between 06:00-12:00 Lisbon time.
+    # DST-safe pair: at least one scheduled run starts at or after
+    # 08:00 Lisbon without firing before the Friday request deadline.
+    # UTC+0 (winter): 08:00 UTC = 08:00 WET
+    # UTC+1 (summer): 07:00 UTC = 08:00 WEST
     - cron: "0 7 * * 5"
+    - cron: "0 8 * * 5"
   workflow_dispatch: {}
 
 jobs:
