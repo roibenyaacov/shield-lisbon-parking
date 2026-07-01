@@ -20,12 +20,11 @@ export async function GET(request: NextRequest) {
     if (isCronAuthed) {
       const nowLisbon  = toZonedTime(new Date(), LISBON_TIMEZONE)
       const lisbonHour = nowLisbon.getHours()
-      // Accept the opening hour and one delayed hour.  Sending before
-      // REQUEST_OPEN_HOUR tells users to register while the API still rejects them.
+      // The workflow runs at adjacent UTC hours for DST.  Accept only the
+      // configured Lisbon hour so the non-matching schedule cannot also send.
       if (
         nowLisbon.getDay() !== REQUEST_OPEN_DAY ||
-        lisbonHour < REQUEST_OPEN_HOUR ||
-        lisbonHour > REQUEST_OPEN_HOUR + 1
+        lisbonHour !== REQUEST_OPEN_HOUR
       ) {
         return NextResponse.json({
           skipped: true,

@@ -25,12 +25,11 @@ async function handleAllocate(request: NextRequest, weekStartOverride?: string) 
   if (isCronAuthed) {
     const nowLisbon = toZonedTime(new Date(), LISBON_TIMEZONE)
     const lisbonHour = nowLisbon.getHours()
-    // Accept the target hour and one delayed hour.  Running before
-    // ALLOCATION_HOUR would close the week while requests are still open.
+    // The workflow runs at adjacent UTC hours for DST.  Accept only the
+    // configured Lisbon hour so the non-matching schedule cannot also run.
     if (
       nowLisbon.getDay() !== ALLOCATION_DAY ||
-      lisbonHour < ALLOCATION_HOUR ||
-      lisbonHour > ALLOCATION_HOUR + 1
+      lisbonHour !== ALLOCATION_HOUR
     ) {
       return NextResponse.json({
         skipped: true,
