@@ -16,23 +16,20 @@ async function handleAllocate(request: NextRequest, weekStartOverride?: string) 
   const isCronAuthed = !!cronSecret && authHeader === `Bearer ${cronSecret}`
 
   // ── DST-safe cron guard ────────────────────────────────────────────────
-  // Vercel cron runs in UTC and has no timezone support, so we schedule
-  // the cron at BOTH 07:00 UTC and 08:00 UTC each Friday.  Exactly one of
-  // those fires at 08:00 Lisbon time depending on whether DST is active.
-  // This guard ignores the run unless the current Lisbon time matches the
-  // target (Friday 08:00).  Admin manual triggers (non-cron auth) bypass
-  // this so they can re-run anytime.
+  // GitHub Actions cron runs in UTC and has no timezone support, so the
+  // workflow schedules both 07:00 UTC and 08:00 UTC each Friday. At least
+  // one run starts at or after 08:00 Lisbon time depending on DST. Admin
+  // manual triggers (non-cron auth) bypass this so they can re-run anytime.
   if (isCronAuthed) {
     const nowLisbon = toZonedTime(new Date(), LISBON_TIMEZONE)
     const lisbonHour = nowLisbon.getHours()
-    // Day guard: only run on Friday.
-    // Hour guard is intentionally broad (6-12) to tolerate GitHub
-    // Actions cron delays of up to several hours.  The idempotency
-    // guard further down (`existingAlloc` check) prevents duplicate
-    // allocations if the endpoint is called more than once.
+    // Never run before ALLOCATION_HOUR: requests are accepted until
+    // Friday 08:00 Lisbon, so an early winter UTC run would miss valid
+    // last-hour submissions. Keep a post-target grace window for
+    // GitHub Actions delays; the allocation_runs marker handles repeats.
     if (
       nowLisbon.getDay() !== ALLOCATION_DAY ||
-      lisbonHour < 6 ||
+      lisbonHour < ALLOCATION_HOUR ||
       lisbonHour > 12
     ) {
       return NextResponse.json({
@@ -80,20 +77,10 @@ async function handleAllocate(request: NextRequest, weekStartOverride?: string) 
   const serviceClient = await createServiceClient()
   const weekStart = weekStartOverride ?? format(nextMonday(new Date()), 'yyyy-MM-dd')
 
-  // ── Idempotency guard ─────────────────────────────────────────────────
-  // Check specifically for the first day of the target week.  Checking
-  // the full range (gte weekStart, lte weekEnd) is too broad: a manually
-  // created allocation for any mid-week date would silently skip the
-  // entire allocation run.  Checking only weekStart means a stray
-  // mid-week row doesn't block the cron.
-  const { data: existingAlloc } = await serviceClient
-    .from('weekly_allocations')
-    .select('id')
-    .eq('date', weekStart)
-    .limit(1)
-    .maybeSingle()
+  const { allocations, waitlisted } = await runAllocation(serviceClient, weekStart)
+  const saveResult = await saveAllocations(serviceClient, weekStart, allocations, waitlisted)
 
-  if (existingAlloc) {
+  if (saveResult.alreadyRun) {
     return NextResponse.json({
       success:      true,
       week_start:   weekStart,
@@ -101,9 +88,6 @@ async function handleAllocate(request: NextRequest, weekStartOverride?: string) 
       message:      'Allocations already exist for this week.',
     })
   }
-
-  const { allocations, waitlisted } = await runAllocation(serviceClient, weekStart)
-  await saveAllocations(serviceClient, weekStart, allocations, waitlisted)
 
   // Per-user send errors are already captured inside the summary and
   // never reach this catch.  This try/catch only fires if the function
