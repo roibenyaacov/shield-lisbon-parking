@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import type { Profile, ParkingSpot, WeeklyRequest, WeeklyAllocationInsert, WaitlistInsert } from '@/types/db'
+import type { Profile, ParkingSpot, WeeklyRequest } from '@/types/db'
 import { TEAM_DAY_MAP, DAY_NAMES, DAY_KEYS, MAX_DAYS_PER_USER } from '@/lib/constants'
 import { addDays, format, parseISO } from 'date-fns'
 
@@ -56,10 +56,16 @@ export async function runAllocation(
   const spots = (spotsRes.data ?? []) as ParkingSpot[]
   const requests = (requestsRes.data ?? []) as WeeklyRequest[]
   const profiles = (profilesRes.data ?? []) as Profile[]
-  const releases = (releasesRes.data ?? []) as { user_id: string }[]
+  const releases = (releasesRes.data ?? []) as { user_id: string; date: string | null }[]
 
   const profileMap = new Map(profiles.map((p) => [p.id, p]))
-  const releasedUserIds = new Set(releases.map((r) => r.user_id))
+  const releasedDatesByUser = new Map<string, Set<string | null>>()
+  for (const release of releases) {
+    if (!releasedDatesByUser.has(release.user_id)) {
+      releasedDatesByUser.set(release.user_id, new Set())
+    }
+    releasedDatesByUser.get(release.user_id)!.add(release.date)
+  }
 
   const userDayCount = new Map<string, number>()
   const allAllocations: AllocationEntry[] = []
@@ -78,7 +84,9 @@ export async function runAllocation(
 
     const fixedSpots = spots.filter((s) => s.fixed_user_id)
     for (const spot of fixedSpots) {
-      if (!releasedUserIds.has(spot.fixed_user_id!)) {
+      const releasedDates = releasedDatesByUser.get(spot.fixed_user_id!)
+      const isReleasedToday = releasedDates?.has(dateStr) || releasedDates?.has(null)
+      if (!isReleasedToday) {
         occupiedToday.add(spot.id)
         allAllocations.push({
           user_id: spot.fixed_user_id!,
@@ -101,7 +109,9 @@ export async function runAllocation(
       const profile = profileMap.get(req.user_id)
       if (!profile) continue
       const hasFixedSpot = fixedSpots.some((s) => s.fixed_user_id === req.user_id)
-      if (hasFixedSpot && !releasedUserIds.has(req.user_id)) continue
+      const releasedDates = releasedDatesByUser.get(req.user_id)
+      const isReleasedToday = releasedDates?.has(dateStr) || releasedDates?.has(null)
+      if (hasFixedSpot && !isReleasedToday) continue
 
       dayRequests.push({
         userId: req.user_id,
@@ -204,27 +214,15 @@ export async function saveAllocations(
   weekStart: string,
   allocations: AllocationEntry[],
   waitlisted: { user_id: string; date: string }[]
-): Promise<void> {
-  const weekDates = Array.from({ length: 5 }, (_, i) =>
-    format(addDays(parseISO(weekStart), i), 'yyyy-MM-dd')
-  )
+): Promise<boolean> {
+  const { data, error } = await supabase.rpc('save_weekly_allocation_results', {
+    p_week_start: weekStart,
+    p_allocations: allocations,
+    p_waitlist: waitlisted,
+  })
 
-  for (const date of weekDates) {
-    await supabase.from('weekly_allocations').delete().eq('date', date)
-    await supabase.from('waitlist').delete().eq('date', date)
-  }
+  if (error) throw new Error(`Failed to save allocations: ${error.message}`)
 
-  if (allocations.length > 0) {
-    const { error } = await supabase
-      .from('weekly_allocations')
-      .insert(allocations as any)
-    if (error) throw new Error(`Failed to insert allocations: ${error.message}`)
-  }
-
-  if (waitlisted.length > 0) {
-    const { error } = await supabase
-      .from('waitlist')
-      .insert(waitlisted as any)
-    if (error) throw new Error(`Failed to insert waitlist: ${error.message}`)
-  }
+  const result = data as { already_run?: boolean } | null
+  return !result?.already_run
 }

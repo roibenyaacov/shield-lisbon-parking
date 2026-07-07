@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { toZonedTime } from 'date-fns-tz'
 import { nextMonday, format } from 'date-fns'
-import { LISBON_TIMEZONE, REQUEST_OPEN_DAY, REQUEST_OPEN_HOUR, MAX_DAYS_PER_USER } from '@/lib/constants'
+import { LISBON_TIMEZONE, REQUEST_OPEN_DAY, REQUEST_OPEN_HOUR, ALLOCATION_HOUR, MAX_DAYS_PER_USER } from '@/lib/constants'
 
 // Mirrors the client-side getFormState() logic but runs on the server
 // so it cannot be bypassed by editing the browser JS.
@@ -13,7 +13,7 @@ function isWindowOpen(): boolean {
 
   if (day === REQUEST_OPEN_DAY && hour >= REQUEST_OPEN_HOUR) return true // Wed 19:00+
   if (day === 4) return true                                              // Thursday all day
-  if (day === 5 && hour < 8) return true                                 // Friday before 08:00
+  if (day === 5 && hour < ALLOCATION_HOUR) return true                    // Friday before allocation
   return false
 }
 

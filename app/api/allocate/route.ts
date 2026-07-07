@@ -16,23 +16,19 @@ async function handleAllocate(request: NextRequest, weekStartOverride?: string) 
   const isCronAuthed = !!cronSecret && authHeader === `Bearer ${cronSecret}`
 
   // ── DST-safe cron guard ────────────────────────────────────────────────
-  // Vercel cron runs in UTC and has no timezone support, so we schedule
-  // the cron at BOTH 07:00 UTC and 08:00 UTC each Friday.  Exactly one of
-  // those fires at 08:00 Lisbon time depending on whether DST is active.
-  // This guard ignores the run unless the current Lisbon time matches the
-  // target (Friday 08:00).  Admin manual triggers (non-cron auth) bypass
-  // this so they can re-run anytime.
+  // GitHub Actions cron runs in UTC and has no timezone support, so we schedule
+  // the cron at both 07:00 UTC and 08:00 UTC each Friday.  At least one fires
+  // after the Lisbon request window closes at 08:00, even across DST changes.
+  // Admin manual triggers (non-cron auth) bypass this so they can re-run anytime.
   if (isCronAuthed) {
     const nowLisbon = toZonedTime(new Date(), LISBON_TIMEZONE)
     const lisbonHour = nowLisbon.getHours()
-    // Day guard: only run on Friday.
-    // Hour guard is intentionally broad (6-12) to tolerate GitHub
-    // Actions cron delays of up to several hours.  The idempotency
-    // guard further down (`existingAlloc` check) prevents duplicate
-    // allocations if the endpoint is called more than once.
+    // Day guard: only run on Friday.  The lower bound must never be before
+    // ALLOCATION_HOUR because request submission remains open until then.
+    // The upper bound tolerates delayed GitHub Actions jobs.
     if (
       nowLisbon.getDay() !== ALLOCATION_DAY ||
-      lisbonHour < 6 ||
+      lisbonHour < ALLOCATION_HOUR ||
       lisbonHour > 12
     ) {
       return NextResponse.json({
@@ -81,19 +77,17 @@ async function handleAllocate(request: NextRequest, weekStartOverride?: string) 
   const weekStart = weekStartOverride ?? format(nextMonday(new Date()), 'yyyy-MM-dd')
 
   // ── Idempotency guard ─────────────────────────────────────────────────
-  // Check specifically for the first day of the target week.  Checking
-  // the full range (gte weekStart, lte weekEnd) is too broad: a manually
-  // created allocation for any mid-week date would silently skip the
-  // entire allocation run.  Checking only weekStart means a stray
-  // mid-week row doesn't block the cron.
-  const { data: existingAlloc } = await serviceClient
-    .from('weekly_allocations')
-    .select('id')
-    .eq('date', weekStart)
+  // A dedicated run marker is safer than inferring completion from an
+  // allocation row: some valid weeks can have no Monday allocations, and
+  // individual manual claims should never make the cron skip publication.
+  const { data: existingRun } = await serviceClient
+    .from('allocation_runs')
+    .select('week_start')
+    .eq('week_start', weekStart)
     .limit(1)
     .maybeSingle()
 
-  if (existingAlloc) {
+  if (existingRun) {
     return NextResponse.json({
       success:      true,
       week_start:   weekStart,
@@ -103,7 +97,15 @@ async function handleAllocate(request: NextRequest, weekStartOverride?: string) 
   }
 
   const { allocations, waitlisted } = await runAllocation(serviceClient, weekStart)
-  await saveAllocations(serviceClient, weekStart, allocations, waitlisted)
+  const saved = await saveAllocations(serviceClient, weekStart, allocations, waitlisted)
+  if (!saved) {
+    return NextResponse.json({
+      success:      true,
+      week_start:   weekStart,
+      already_run:  true,
+      message:      'Allocations already exist for this week.',
+    })
+  }
 
   // Per-user send errors are already captured inside the summary and
   // never reach this catch.  This try/catch only fires if the function
