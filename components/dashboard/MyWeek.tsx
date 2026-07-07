@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Card } from '@/components/ui/Card'
-import { Check, Clock, ChevronRight, ChevronLeft, ChevronDown, Zap, Bike, LogOut, PlusCircle, Lock, Car } from 'lucide-react'
+import { Check, Clock, ChevronRight, ChevronLeft, ChevronDown, Zap, Bike, Lock, Car } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { format, addDays, startOfWeek, addWeeks, isBefore, startOfDay, isToday } from 'date-fns'
 import { DAY_LABELS, DAY_NAMES } from '@/lib/constants'
@@ -41,6 +41,9 @@ interface SpotInfo {
   isFixedAndOccupiedByOwner: boolean
   isCurrentUserFixedSpot: boolean
 }
+
+type DateRow = { date: string | null }
+type SpotReleaseRow = { spot_id: number }
 
 export function MyWeek({ userId, fixedSpotId, fixedSpotLabel, userName }: MyWeekProps) {
   const [weekOffset, setWeekOffset] = useState(0)
@@ -93,8 +96,10 @@ export function MyWeek({ userId, fixedSpotId, fixedSpotLabel, userName }: MyWeek
     ])
 
     const allocs = (allocsRes.data ?? []) as (WeeklyAllocation & { spot: ParkingSpot })[]
-    const waitlistedDates = new Set((waitlistRes.data ?? []).map((w: any) => w.date))
-    const releasedFixedDates = new Set((releaseMarkersRes.data ?? []).map((r: any) => r.date))
+    const waitlistRows = (waitlistRes.data ?? []) as DateRow[]
+    const releaseMarkerRows = (releaseMarkersRes.data ?? []) as DateRow[]
+    const waitlistedDates = new Set(waitlistRows.map((w) => w.date))
+    const releasedFixedDates = new Set(releaseMarkerRows.map((r) => r.date))
 
     setDays(dates.map(d => {
       const alloc = allocs.find(a => a.date === d.date)
@@ -141,7 +146,8 @@ export function MyWeek({ userId, fixedSpotId, fixedSpotLabel, userName }: MyWeek
 
     const spots = (spotsRes.data ?? []) as (ParkingSpot & { fixed_user: { full_name: string } | null })[]
     const allocs = (allocsRes.data ?? []) as (WeeklyAllocation & { user: Profile })[]
-    const releasedFixedSpotIds = new Set((releasesRes.data ?? []).map((r: any) => r.spot_id))
+    const releaseRows = (releasesRes.data ?? []) as SpotReleaseRow[]
+    const releasedFixedSpotIds = new Set(releaseRows.map((r) => r.spot_id))
 
     setDaySpots(spots.map(s => {
       const alloc = allocs.find(a => a.spot_id === s.id)
@@ -243,8 +249,8 @@ export function MyWeek({ userId, fixedSpotId, fixedSpotLabel, userName }: MyWeek
 
       await loadWeek(weekOffset)
       if (expandedDay) await loadDaySpots(expandedDay)
-    } catch (err: any) {
-      toast.error(err.message ?? 'Action failed')
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Action failed')
     } finally {
       setActionLoading(null)
       setConfirmAction(null)
