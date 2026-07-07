@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Card } from '@/components/ui/Card'
-import { Check, Clock, ChevronRight, ChevronLeft, ChevronDown, Zap, Bike, LogOut, PlusCircle, Lock, Car } from 'lucide-react'
+import { Check, Clock, ChevronRight, ChevronLeft, ChevronDown, Zap, Bike, Lock, Car } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { format, addDays, startOfWeek, addWeeks, isBefore, startOfDay, isToday } from 'date-fns'
 import { DAY_LABELS, DAY_NAMES } from '@/lib/constants'
@@ -42,6 +42,9 @@ interface SpotInfo {
   isCurrentUserFixedSpot: boolean
 }
 
+type DateRow = { date: string | null }
+type SpotReleaseRow = { spot_id: number }
+
 export function MyWeek({ userId, fixedSpotId, fixedSpotLabel, userName }: MyWeekProps) {
   const [weekOffset, setWeekOffset] = useState(0)
   const [days, setDays] = useState<DayInfo[]>([])
@@ -69,7 +72,16 @@ export function MyWeek({ userId, fixedSpotId, fixedSpotLabel, userName }: MyWeek
       }
     })
 
-    const [allocsRes, waitlistRes] = await Promise.all([
+    const releaseMarkersPromise = fixedSpotId != null
+      ? supabase
+        .from('spot_releases')
+        .select('date')
+        .eq('user_id', userId)
+        .eq('spot_id', fixedSpotId)
+        .in('date', dates.map(d => d.date))
+      : Promise.resolve({ data: [] })
+
+    const [allocsRes, waitlistRes, releaseMarkersRes] = await Promise.all([
       supabase
         .from('weekly_allocations')
         .select('*, spot:parking_spots(*)')
@@ -80,23 +92,28 @@ export function MyWeek({ userId, fixedSpotId, fixedSpotLabel, userName }: MyWeek
         .select('date')
         .eq('user_id', userId)
         .in('date', dates.map(d => d.date)),
+      releaseMarkersPromise,
     ])
 
     const allocs = (allocsRes.data ?? []) as (WeeklyAllocation & { spot: ParkingSpot })[]
-    const waitlistedDates = new Set((waitlistRes.data ?? []).map((w: any) => w.date))
+    const waitlistRows = (waitlistRes.data ?? []) as DateRow[]
+    const releaseMarkerRows = (releaseMarkersRes.data ?? []) as DateRow[]
+    const waitlistedDates = new Set(waitlistRows.map((w) => w.date))
+    const releasedFixedDates = new Set(releaseMarkerRows.map((r) => r.date))
 
     setDays(dates.map(d => {
       const alloc = allocs.find(a => a.date === d.date)
+      const isFixedReleased = releasedFixedDates.has(d.date)
       return {
         ...d,
-        spotLabel: alloc?.spot?.label ?? (fixedSpotId ? (fixedSpotLabel ?? null) : null),
+        spotLabel: alloc?.spot?.label ?? (fixedSpotId && !isFixedReleased ? (fixedSpotLabel ?? null) : null),
         spotPriority: alloc?.spot?.priority ?? null,
-        spotId: alloc?.spot?.id ?? (fixedSpotId ?? null),
+        spotId: alloc?.spot?.id ?? (fixedSpotId && !isFixedReleased ? fixedSpotId : null),
         waitlisted: waitlistedDates.has(d.date),
       }
     }))
     setLoading(false)
-  }, [userId, supabase])
+  }, [userId, fixedSpotId, fixedSpotLabel, supabase])
 
   useEffect(() => {
     loadWeek(weekOffset)
@@ -111,26 +128,34 @@ export function MyWeek({ userId, fixedSpotId, fixedSpotLabel, userName }: MyWeek
         if (expandedDay) loadDaySpots(expandedDay)
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'waitlist' }, () => loadWeek(weekOffset))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'spot_releases' }, () => {
+        loadWeek(weekOffset)
+        if (expandedDay) loadDaySpots(expandedDay)
+      })
       .subscribe()
     return () => { supabase.removeChannel(channel) }
   }, [supabase, loadWeek, weekOffset, expandedDay])
 
   const loadDaySpots = async (date: string) => {
     setSpotsLoading(true)
-    const [spotsRes, allocsRes] = await Promise.all([
+    const [spotsRes, allocsRes, releasesRes] = await Promise.all([
       supabase.from('parking_spots').select('*, fixed_user:profiles!parking_spots_fixed_user_id_fkey(full_name)').eq('is_active', true).order('label'),
       supabase.from('weekly_allocations').select('*, user:profiles(*)').eq('date', date),
+      supabase.from('spot_releases').select('spot_id').eq('date', date),
     ])
 
     const spots = (spotsRes.data ?? []) as (ParkingSpot & { fixed_user: { full_name: string } | null })[]
     const allocs = (allocsRes.data ?? []) as (WeeklyAllocation & { user: Profile })[]
+    const releaseRows = (releasesRes.data ?? []) as SpotReleaseRow[]
+    const releasedFixedSpotIds = new Set(releaseRows.map((r) => r.spot_id))
 
     setDaySpots(spots.map(s => {
       const alloc = allocs.find(a => a.spot_id === s.id)
       const isOwnerFixedSpot = fixedSpotId != null && fixedSpotId === s.id
       const isSpot40ReservedFallback = s.label === '40'
+      const isFixedReleased = releasedFixedSpotIds.has(s.id)
       const isReserved = !!s.fixed_user_id || !!s.reserved_name || isSpot40ReservedFallback
-      const isOccupiedByFixedOwner = isReserved && (!alloc || alloc?.user_id === s.fixed_user_id)
+      const isOccupiedByFixedOwner = !isFixedReleased && isReserved && (!alloc || alloc?.user_id === s.fixed_user_id)
       return {
         id: s.id,
         label: s.label,
@@ -164,7 +189,7 @@ export function MyWeek({ userId, fixedSpotId, fixedSpotLabel, userName }: MyWeek
     if (spot.isCurrentUser) {
       setConfirmAction({ spotId: spot.id, date, type: 'release' })
     } else if (spot.isCurrentUserFixedSpot && spot.isAvailable) {
-      setConfirmAction({ spotId: spot.id, date, type: 'release' })
+      setConfirmAction({ spotId: spot.id, date, type: 'reclaim' })
     } else if (spot.isAvailable && !spot.isFixed) {
       const userHasSpotToday = days.find(d => d.date === date)?.spotId
       if (userHasSpotToday) {
@@ -224,8 +249,8 @@ export function MyWeek({ userId, fixedSpotId, fixedSpotLabel, userName }: MyWeek
 
       await loadWeek(weekOffset)
       if (expandedDay) await loadDaySpots(expandedDay)
-    } catch (err: any) {
-      toast.error(err.message ?? 'Action failed')
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Action failed')
     } finally {
       setActionLoading(null)
       setConfirmAction(null)

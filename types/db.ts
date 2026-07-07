@@ -81,6 +81,12 @@ export type SpotRelease = {
   user_id: string
   spot_id: number
   week_start: string
+  date: string | null
+  created_at: string
+}
+
+export type AllocationRun = {
+  week_start: string
   created_at: string
 }
 
@@ -127,6 +133,7 @@ export type SpotReleaseInsert = {
   user_id: string
   spot_id: number
   week_start: string
+  date?: string | null
 }
 
 // ============================================
@@ -276,6 +283,15 @@ export type Database = {
             referencedColumns: ['id']
           }
         ]
+      }
+      allocation_runs: {
+        Row: AllocationRun
+        Insert: {
+          week_start: string
+          created_at?: string
+        }
+        Update: Partial<AllocationRun>
+        Relationships: []
       }
     }
     Views: Record<string, never>
