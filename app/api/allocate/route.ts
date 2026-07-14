@@ -25,15 +25,12 @@ async function handleAllocate(request: NextRequest, weekStartOverride?: string) 
   if (isCronAuthed) {
     const nowLisbon = toZonedTime(new Date(), LISBON_TIMEZONE)
     const lisbonHour = nowLisbon.getHours()
-    // Day guard: only run on Friday.
-    // Hour guard is intentionally broad (6-12) to tolerate GitHub
-    // Actions cron delays of up to several hours.  The idempotency
-    // guard further down (`existingAlloc` check) prevents duplicate
-    // allocations if the endpoint is called more than once.
+    // The paired UTC schedules cover Lisbon DST. Only the one that lands
+    // exactly at 08:00 Lisbon may run; in particular, the winter 07:00 UTC
+    // invocation must not allocate while requests are still open.
     if (
       nowLisbon.getDay() !== ALLOCATION_DAY ||
-      lisbonHour < 6 ||
-      lisbonHour > 12
+      lisbonHour !== ALLOCATION_HOUR
     ) {
       return NextResponse.json({
         skipped: true,

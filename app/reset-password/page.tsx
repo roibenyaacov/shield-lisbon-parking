@@ -40,11 +40,20 @@ export default function ResetPasswordPage() {
         })
         return
       }
+
+      // Supabase redirects expired/invalid recovery links with an error
+      // fragment but no tokens. Never fall through to an existing browser
+      // session, or the form could change the signed-in user's password.
+      queueMicrotask(() => {
+        setError('Reset link is invalid or expired. Please request a new one.')
+      })
+      window.history.replaceState(null, '', '/reset-password')
+      return
     }
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
-        if (session) setReady(true)
+        if (event === 'PASSWORD_RECOVERY' && session) setReady(true)
       }
     )
 
