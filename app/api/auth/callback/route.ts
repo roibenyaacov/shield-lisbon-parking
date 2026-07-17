@@ -35,16 +35,18 @@ export async function GET(request: Request) {
     if (!error) {
       return NextResponse.redirect(`${origin}${next}`)
     }
+    console.error('Auth callback exchangeCodeForSession failed', { message: error.message })
   }
 
   if (token_hash && type) {
     const { error } = await supabase.auth.verifyOtp({
       token_hash,
-      type: type as 'signup' | 'email',
+      type: type as 'signup' | 'email' | 'recovery' | 'email_change',
     })
     if (!error) {
       return NextResponse.redirect(`${origin}${next}`)
     }
+    console.error('Auth callback verifyOtp failed', { type, message: error.message })
   }
 
   return NextResponse.redirect(`${origin}/login?error=auth_callback_error`)

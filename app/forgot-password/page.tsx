@@ -22,8 +22,14 @@ export default function ForgotPasswordPage() {
     setError(null)
     setLoading(true)
 
+    const canonicalProdResetUrl = 'https://www.smarty-parking-portugal.com/reset-password'
+    const isSmartyProdHost = /(^|\.)smarty-parking-portugal\.com$/i.test(window.location.hostname)
+    const redirectTo = isSmartyProdHost
+      ? canonicalProdResetUrl
+      : `${window.location.origin}/reset-password`
+
     const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/reset-password`,
+      redirectTo,
     })
 
     if (resetError) {

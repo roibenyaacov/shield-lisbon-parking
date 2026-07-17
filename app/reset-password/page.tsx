@@ -2,8 +2,9 @@
 
 export const dynamic = 'force-dynamic'
 
-import { useState, useEffect } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/Button'
 import { Lock, Eye, EyeOff, CheckCircle2 } from 'lucide-react'
@@ -17,44 +18,97 @@ export default function ResetPasswordPage() {
   const [loading, setLoading] = useState(false)
   const [success, setSuccess] = useState(false)
   const [ready, setReady] = useState(false)
+  const [bootstrapping, setBootstrapping] = useState(true)
   const router = useRouter()
-  const supabase = createClient()
+  const supabase = useMemo(() => createClient(), [])
+  const bootstrapStartedRef = useRef(false)
 
   useEffect(() => {
-    const hash = window.location.hash
-    if (hash) {
-      const params = new URLSearchParams(hash.substring(1))
-      const accessToken = params.get('access_token')
-      const refreshToken = params.get('refresh_token')
-      if (accessToken && refreshToken) {
-        supabase.auth.setSession({
-          access_token: accessToken,
-          refresh_token: refreshToken,
-        }).then(({ error }) => {
-          if (error) {
-            setError('Reset link is invalid or expired. Please request a new one.')
-          } else {
-            setReady(true)
-            window.history.replaceState(null, '', '/reset-password')
-          }
+    if (bootstrapStartedRef.current) return
+    bootstrapStartedRef.current = true
+
+    const cleanResetUrl = () => {
+      window.history.replaceState(null, '', '/reset-password')
+    }
+
+    const bootstrapRecoverySession = async () => {
+      const url = new URL(window.location.href)
+      const query = url.searchParams
+      const hash = new URLSearchParams(url.hash.replace(/^#/, ''))
+
+      const code = query.get('code')
+      const tokenHash = query.get('token_hash')
+      const type = query.get('type') ?? hash.get('type')
+      const accessToken = hash.get('access_token')
+      const refreshToken = hash.get('refresh_token')
+
+      try {
+        if (code) {
+          const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code)
+          if (exchangeError) throw exchangeError
+          cleanResetUrl()
+          setReady(true)
+          return
+        }
+
+        if (tokenHash && type === 'recovery') {
+          const { error: verifyError } = await supabase.auth.verifyOtp({
+            type: 'recovery',
+            token_hash: tokenHash,
+          })
+          if (verifyError) throw verifyError
+          cleanResetUrl()
+          setReady(true)
+          return
+        }
+
+        if (accessToken && refreshToken) {
+          const { error: sessionError } = await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken,
+          })
+          if (sessionError) throw sessionError
+          cleanResetUrl()
+          setReady(true)
+          return
+        }
+
+        const { data } = await supabase.auth.getSession()
+        if (data.session) {
+          setReady(true)
+          return
+        }
+
+        setError('Your reset link has expired or is invalid. Please request a new one.')
+      } catch (sessionError) {
+        console.error('Password recovery bootstrap failed', {
+          has_code: Boolean(code),
+          has_token_hash: Boolean(tokenHash),
+          has_access_token: Boolean(accessToken),
+          recovery_type: type ?? null,
+          message: sessionError instanceof Error ? sessionError.message : String(sessionError),
         })
-        return
+        setError('Your reset link has expired or is invalid. Please request a new one.')
+      } finally {
+        setBootstrapping(false)
       }
     }
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event, session) => {
-        if (session) setReady(true)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!session) return
+      if (event === 'PASSWORD_RECOVERY' || event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') {
+        setReady(true)
       }
-    )
+    })
 
+    void bootstrapRecoverySession()
     return () => subscription.unsubscribe()
   }, [supabase])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    if (!ready) {
+    if (!ready || bootstrapping) {
       setError('Your reset link has expired or is invalid. Please request a new one.')
       return
     }
@@ -186,6 +240,9 @@ export default function ResetPasswordPage() {
                   className="rounded-xl bg-red-50 border border-red-100 px-4 py-3"
                 >
                   <p className="text-sm text-red-600">{error}</p>
+                  <Link href="/forgot-password" className="mt-2 inline-block text-xs font-semibold text-red-700 underline">
+                    Request a new reset link
+                  </Link>
                 </motion.div>
               )}
 

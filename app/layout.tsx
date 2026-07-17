@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next'
 import './globals.css'
+import { RecoveryLinkGuard } from '@/components/auth/RecoveryLinkGuard'
 
 export const metadata: Metadata = {
   title: 'Shield Lisbon Parking',
@@ -22,6 +23,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className="antialiased" suppressHydrationWarning>
+        <RecoveryLinkGuard />
         {children}
       </body>
     </html>
