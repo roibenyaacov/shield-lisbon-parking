@@ -1,23 +1,19 @@
 'use client'
 
 import { useEffect } from 'react'
+import { hasRecoveryParams, parseRecoveryUrl } from '@/lib/auth/recovery'
 
 export function RecoveryLinkGuard() {
   useEffect(() => {
     const url = new URL(window.location.href)
-    const hash = new URLSearchParams(url.hash.replace(/^#/, ''))
-    const typeFromHash = hash.get('type')
-    const typeFromQuery = url.searchParams.get('type')
-    const isRecovery = typeFromHash === 'recovery' || typeFromQuery === 'recovery'
-
-    if (!isRecovery) return
     if (url.pathname === '/reset-password') return
 
-    // Recovery links occasionally open at `/dashboard` on mobile mail apps.
+    const params = parseRecoveryUrl(window.location.href)
+    if (!hasRecoveryParams(params)) return
+
+    // Recovery links occasionally open on `/dashboard` or `/` in mobile mail apps.
     // Preserve query/hash and route to the dedicated reset page exactly once.
-    const query = url.search
-    const fragment = url.hash
-    window.location.replace(`/reset-password${query}${fragment}`)
+    window.location.replace(`/reset-password${url.search}${url.hash}`)
   }, [])
 
   return null
