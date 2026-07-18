@@ -5,39 +5,14 @@ export const dynamic = 'force-dynamic'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import type { Session, SupabaseClient } from '@supabase/supabase-js'
-import { createClient } from '@/lib/supabase/client'
+import { createRecoveryClient } from '@/lib/supabase/client'
 import {
   cleanResetPasswordUrl,
   parseRecoveryUrl,
-  wait,
 } from '@/lib/auth/recovery'
 import { Button } from '@/components/ui/Button'
 import { Lock, Eye, EyeOff, CheckCircle2 } from 'lucide-react'
 import { motion } from 'framer-motion'
-
-const RECOVERY_WAIT_MS = 5000
-const RECOVERY_POLL_MS = 250
-
-async function getActiveSession(supabase: SupabaseClient): Promise<Session | null> {
-  const { data } = await supabase.auth.getSession()
-  return data.session ?? null
-}
-
-async function waitForRecoverySession(
-  supabase: SupabaseClient,
-  timeoutMs = RECOVERY_WAIT_MS
-): Promise<Session | null> {
-  const started = Date.now()
-
-  while (Date.now() - started < timeoutMs) {
-    const session = await getActiveSession(supabase)
-    if (session) return session
-    await wait(RECOVERY_POLL_MS)
-  }
-
-  return null
-}
 
 export default function ResetPasswordPage() {
   const [password, setPassword] = useState('')
@@ -49,7 +24,7 @@ export default function ResetPasswordPage() {
   const [ready, setReady] = useState(false)
   const [bootstrapping, setBootstrapping] = useState(true)
   const router = useRouter()
-  const supabase = useMemo(() => createClient(), [])
+  const supabase = useMemo(() => createRecoveryClient(), [])
   const bootstrapStartedRef = useRef(false)
 
   useEffect(() => {
@@ -86,8 +61,9 @@ export default function ResetPasswordPage() {
       }
 
       try {
-        // Wait for the browser client to finish URL detection before handling
-        // formats that @supabase/ssr does not consume itself.
+        // This isolated client has automatic URL detection disabled. Finish
+        // loading its stored session before explicitly consuming credentials,
+        // so stale session recovery cannot race and overwrite the new session.
         const { error: initializeError } = await supabase.auth.initialize()
 
         if (params.tokenHash && params.type === 'recovery') {
@@ -116,17 +92,9 @@ export default function ResetPasswordPage() {
         }
 
         if (params.code) {
-          // Successful PKCE auto-detection removes `code`. Only exchange it
-          // manually when the browser client did not consume it.
-          if (new URL(window.location.href).searchParams.has('code')) {
-            const { data, error: exchangeError } = await supabase.auth.exchangeCodeForSession(params.code)
-            if (exchangeError || !data.session) {
-              throw exchangeError ?? new Error('Recovery session missing')
-            }
-          } else {
-            if (initializeError) throw initializeError
-            const session = await getActiveSession(supabase)
-            if (!session) throw new Error('Recovery session missing')
+          const { data, error: exchangeError } = await supabase.auth.exchangeCodeForSession(params.code)
+          if (exchangeError || !data.session) {
+            throw exchangeError ?? new Error('Recovery session missing')
           }
 
           markReady()
@@ -135,8 +103,8 @@ export default function ResetPasswordPage() {
 
         if (initializeError) throw initializeError
 
-        const session = await waitForRecoverySession(supabase, 1500)
-        if (session) {
+        const { data } = await supabase.auth.getSession()
+        if (data.session) {
           markReady()
           return
         }
