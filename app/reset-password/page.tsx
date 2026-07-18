@@ -9,7 +9,6 @@ import type { Session, SupabaseClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/client'
 import {
   cleanResetPasswordUrl,
-  hasRecoveryParams,
   parseRecoveryUrl,
   wait,
 } from '@/lib/auth/recovery'
@@ -86,79 +85,57 @@ export default function ResetPasswordPage() {
         return
       }
 
-      const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-        if (!session) return
-        if (
-          event === 'PASSWORD_RECOVERY' ||
-          event === 'SIGNED_IN' ||
-          event === 'INITIAL_SESSION' ||
-          event === 'TOKEN_REFRESHED'
-        ) {
-          markReady()
-        }
-      })
-
       try {
-        // @supabase/ssr auto-detects ?code= in the URL (PKCE). Give it time first.
-        let session = await waitForRecoverySession(supabase, hasRecoveryParams(params) ? RECOVERY_WAIT_MS : 1500)
-        if (session) {
-          markReady()
-          return
-        }
+        // Wait for the browser client to finish URL detection before handling
+        // formats that @supabase/ssr does not consume itself.
+        const { error: initializeError } = await supabase.auth.initialize()
 
         if (params.tokenHash && params.type === 'recovery') {
-          const { error: verifyError } = await supabase.auth.verifyOtp({
+          const { data, error: verifyError } = await supabase.auth.verifyOtp({
             type: 'recovery',
             token_hash: params.tokenHash,
           })
-          if (verifyError) {
-            session = await getActiveSession(supabase)
-            if (session) {
-              markReady()
-              return
-            }
-            throw verifyError
-          }
+          if (verifyError || !data.session) throw verifyError ?? new Error('Recovery session missing')
 
           markReady()
           return
         }
 
         if (params.accessToken && params.refreshToken) {
-          const { error: sessionError } = await supabase.auth.setSession({
+          // createBrowserClient uses PKCE and rejects implicit callback URLs.
+          // Always install the recovery tokens explicitly so a pre-existing
+          // session can never be mistaken for the recovery session.
+          const { data, error: sessionError } = await supabase.auth.setSession({
             access_token: params.accessToken,
             refresh_token: params.refreshToken,
           })
-          if (sessionError) {
-            session = await getActiveSession(supabase)
-            if (session) {
-              markReady()
-              return
-            }
-            throw sessionError
-          }
+          if (sessionError || !data.session) throw sessionError ?? new Error('Recovery session missing')
 
           markReady()
           return
         }
 
         if (params.code) {
-          // Manual exchange only if auto-detect did not finish in time.
-          const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(params.code)
-          if (exchangeError) {
-            session = await getActiveSession(supabase)
-            if (session) {
-              markReady()
-              return
+          // Successful PKCE auto-detection removes `code`. Only exchange it
+          // manually when the browser client did not consume it.
+          if (new URL(window.location.href).searchParams.has('code')) {
+            const { data, error: exchangeError } = await supabase.auth.exchangeCodeForSession(params.code)
+            if (exchangeError || !data.session) {
+              throw exchangeError ?? new Error('Recovery session missing')
             }
-            throw exchangeError
+          } else {
+            if (initializeError) throw initializeError
+            const session = await getActiveSession(supabase)
+            if (!session) throw new Error('Recovery session missing')
           }
 
           markReady()
           return
         }
 
-        session = await getActiveSession(supabase)
+        if (initializeError) throw initializeError
+
+        const session = await waitForRecoverySession(supabase, 1500)
         if (session) {
           markReady()
           return
@@ -171,12 +148,6 @@ export default function ResetPasswordPage() {
           recovery_type: params.type,
         })
       } catch (sessionError) {
-        const recovered = await getActiveSession(supabase)
-        if (recovered) {
-          markReady()
-          return
-        }
-
         fail('Your reset link has expired or is invalid. Please request a new one.', {
           has_code: Boolean(params.code),
           has_token_hash: Boolean(params.tokenHash),
@@ -184,8 +155,6 @@ export default function ResetPasswordPage() {
           recovery_type: params.type,
           message: sessionError instanceof Error ? sessionError.message : String(sessionError),
         })
-      } finally {
-        subscription.unsubscribe()
       }
     }
 
