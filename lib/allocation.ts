@@ -171,17 +171,19 @@ export async function runAllocation(
       assign(user, 3)
     }
 
-    // Equity check before 3rd day
-    const anyWithZero = dayRequests.some(
-      (u) => (userDayCount.get(u.userId) ?? 0) === 0
-    )
+    // PASS 3b+: 3rd..MAX_DAYS_PER_USER (only if equitable).
+    // When MAX_DAYS was raised from 3 → 4, the old Pass 3b only handled
+    // the 3rd day, so a 4th requested day was waitlisted even with empty
+    // spots remaining. Loop target counts so the cap stays authoritative.
+    for (let targetCount = 2; targetCount < MAX_DAYS_PER_USER; targetCount++) {
+      const anyWithZero = dayRequests.some(
+        (u) => (userDayCount.get(u.userId) ?? 0) === 0
+      )
+      if (anyWithZero) break
 
-    // PASS 3b: 3rd day (only if equitable)
-    if (!anyWithZero) {
       for (const user of [...teamDayUsers, ...otherUsers]) {
         const count = userDayCount.get(user.userId) ?? 0
-        if (count !== 2) continue
-        if (count + 1 > MAX_DAYS_PER_USER) continue
+        if (count !== targetCount) continue
         assign(user, 3)
       }
     }
