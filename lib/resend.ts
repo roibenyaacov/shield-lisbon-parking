@@ -276,6 +276,20 @@ export async function sendAllocationEmails(
     supabase.from('parking_spots').select('*'),
   ])
 
+  // Fail closed: a lookup error must not look like "0 recipients".
+  // /api/allocate catches this and surfaces it as email_error while
+  // keeping the already-persisted allocations intact.
+  if (profilesRes.error) {
+    throw new Error(
+      `Failed to load profiles for allocation emails: ${profilesRes.error.message}`
+    )
+  }
+  if (spotsRes.error) {
+    throw new Error(
+      `Failed to load parking spots for allocation emails: ${spotsRes.error.message}`
+    )
+  }
+
   const profiles = (profilesRes.data ?? []) as Profile[]
   const spots    = (spotsRes.data    ?? []) as ParkingSpot[]
 
@@ -412,19 +426,31 @@ export async function sendRegistrationReminders(
 
   // Exclude fixed-spot holders — their spot is auto-assigned and they
   // don't need to register during the Wed–Fri window.
-  const { data: fixedOwners } = await supabase
+  const { data: fixedOwners, error: fixedOwnersError } = await supabase
     .from('parking_spots')
     .select('fixed_user_id')
     .not('fixed_user_id', 'is', null)
+
+  if (fixedOwnersError) {
+    throw new Error(
+      `Failed to load fixed-spot owners for reminders: ${fixedOwnersError.message}`
+    )
+  }
 
   const fixedOwnerIds = new Set(
     (fixedOwners ?? []).map((s: { fixed_user_id: string }) => s.fixed_user_id)
   )
 
-  const { data: profilesData } = await supabase
+  const { data: profilesData, error: profilesError } = await supabase
     .from('profiles')
     .select('*')
     .eq('is_active', true)
+
+  if (profilesError) {
+    throw new Error(
+      `Failed to load profiles for reminders: ${profilesError.message}`
+    )
+  }
 
   if (!profilesData || profilesData.length === 0) return summary
 
