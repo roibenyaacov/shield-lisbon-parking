@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { isPastLisbonDate } from '@/lib/dates'
 
 export async function POST(request: Request) {
   try {
@@ -23,6 +24,12 @@ export async function POST(request: Request) {
 
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || isNaN(new Date(date).getTime())) {
       return NextResponse.json({ error: 'Invalid date format' }, { status: 400 })
+    }
+
+    // UI disables past days; enforce the same invariant server-side so a
+    // direct POST cannot invent historical allocations.
+    if (isPastLisbonDate(date)) {
+      return NextResponse.json({ error: 'Cannot modify a past date' }, { status: 403 })
     }
 
     const serviceClient = await createServiceClient()

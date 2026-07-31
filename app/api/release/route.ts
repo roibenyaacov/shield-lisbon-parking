@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { sendWaitlistPromotionEmail } from '@/lib/resend'
+import { isPastLisbonDate } from '@/lib/dates'
 import type { Profile, ParkingSpot } from '@/types/db'
 
 export async function POST(request: Request) {
@@ -34,6 +35,12 @@ export async function POST(request: Request) {
 
     if (action !== 'release' && action !== 'reclaim') {
       return NextResponse.json({ error: 'Invalid action' }, { status: 400 })
+    }
+
+    // UI disables past days; enforce server-side so direct POSTs cannot
+    // delete historical allocations or promote waitlist onto past dates.
+    if (isPastLisbonDate(date)) {
+      return NextResponse.json({ error: 'Cannot modify a past date' }, { status: 403 })
     }
     // ─────────────────────────────────────────────────────────────────
 
