@@ -120,6 +120,7 @@ export type WaitlistInsert = {
   id?: string
   user_id: string
   date: string
+  created_at?: string
 }
 
 export type SpotReleaseInsert = {

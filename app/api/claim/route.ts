@@ -92,11 +92,36 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Unexpected error' }, { status: 500 })
     }
 
-    await serviceClient
+    // Claimant must leave the waitlist in the same logical operation. If this
+    // delete fails, release_and_promote can later pick them as FIFO head, hit
+    // UNIQUE(user_id, date), and roll back every release for that date.
+    const { error: waitlistError } = await serviceClient
       .from('waitlist')
       .delete()
       .eq('user_id', user.id)
       .eq('date', date)
+
+    if (waitlistError) {
+      const { error: rollbackError } = await serviceClient
+        .from('weekly_allocations')
+        .delete()
+        .eq('user_id', user.id)
+        .eq('spot_id', spot_id)
+        .eq('date', date)
+
+      console.error('Claim waitlist cleanup failed', {
+        user_id: user.id,
+        spot_id,
+        date,
+        waitlist_error: waitlistError.message,
+        rollback_error: rollbackError?.message ?? null,
+      })
+
+      return NextResponse.json(
+        { error: 'Failed to finalize claim. Please try again.' },
+        { status: 500 }
+      )
+    }
 
     return NextResponse.json({ success: true })
   } catch (error) {
