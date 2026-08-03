@@ -76,10 +76,18 @@ export async function runAllocation(
     }
     const occupiedToday = spotOccupied.get(dateStr)!
 
+    // Users who already hold a spot on this date.  `userDayCount` counts
+    // days across the whole week and therefore cannot answer "does this
+    // user already have a spot today?" — without this set, passes 3a/3b
+    // hand a second (and third) spot for the same day to a user who was
+    // already served in pass 1/2, which violates UNIQUE(user_id, date).
+    const assignedToday = new Set<string>()
+
     const fixedSpots = spots.filter((s) => s.fixed_user_id)
     for (const spot of fixedSpots) {
       if (!releasedUserIds.has(spot.fixed_user_id!)) {
         occupiedToday.add(spot.id)
+        assignedToday.add(spot.fixed_user_id!)
         allAllocations.push({
           user_id: spot.fixed_user_id!,
           spot_id: spot.id,
@@ -123,10 +131,12 @@ export async function runAllocation(
       spots.filter((s) => s.is_active && !occupiedToday.has(s.id))
 
     const assign = (user: UserDayRequest, passNumber: number): boolean => {
+      if (assignedToday.has(user.userId)) return false
       const available = getAvailable()
       const spot = pickSpot(available, user.profile.vehicle_type)
       if (!spot) return false
       occupiedToday.add(spot.id)
+      assignedToday.add(user.userId)
       allAllocations.push({
         user_id: user.userId,
         spot_id: spot.id,
@@ -186,11 +196,8 @@ export async function runAllocation(
       }
     }
 
-    const allocatedToday = new Set(
-      allAllocations.filter((a) => a.date === dateStr).map((a) => a.user_id)
-    )
     for (const user of dayRequests) {
-      if (!allocatedToday.has(user.userId)) {
+      if (!assignedToday.has(user.userId)) {
         allWaitlisted.push({ user_id: user.userId, date: dateStr })
       }
     }
@@ -208,6 +215,26 @@ export async function saveAllocations(
   const weekDates = Array.from({ length: 5 }, (_, i) =>
     format(addDays(parseISO(weekStart), i), 'yyyy-MM-dd')
   )
+
+  // Validate before the destructive delete below.  The delete and insert
+  // are not in a transaction, so an insert that trips UNIQUE(user_id,
+  // date) or UNIQUE(spot_id, date) would leave the week with no
+  // allocations at all.  Failing here keeps the previous rows intact.
+  const seenUserDate = new Set<string>()
+  const seenSpotDate = new Set<string>()
+  for (const a of allocations) {
+    const userKey = `${a.user_id}|${a.date}`
+    if (seenUserDate.has(userKey)) {
+      throw new Error(`Allocation conflict: user ${a.user_id} assigned twice on ${a.date}`)
+    }
+    seenUserDate.add(userKey)
+
+    const spotKey = `${a.spot_id}|${a.date}`
+    if (seenSpotDate.has(spotKey)) {
+      throw new Error(`Allocation conflict: spot ${a.spot_id} assigned twice on ${a.date}`)
+    }
+    seenSpotDate.add(spotKey)
+  }
 
   for (const date of weekDates) {
     await supabase.from('weekly_allocations').delete().eq('date', date)
