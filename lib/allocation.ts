@@ -250,9 +250,7 @@ export async function saveAllocations(
   allocations: AllocationEntry[],
   waitlisted: { user_id: string; date: string }[]
 ): Promise<void> {
-  const weekDates = Array.from({ length: 5 }, (_, i) =>
-    format(addDays(parseISO(weekStart), i), 'yyyy-MM-dd')
-  )
+  const weekDates = weekDatesFor(weekStart)
 
   for (const date of weekDates) {
     await supabase.from('weekly_allocations').delete().eq('date', date)
@@ -260,16 +258,26 @@ export async function saveAllocations(
   }
 
   if (allocations.length > 0) {
+    const rows: WeeklyAllocationInsert[] = allocations.map((a) => ({
+      user_id: a.user_id,
+      spot_id: a.spot_id,
+      date: a.date,
+      pass_number: a.pass_number,
+    }))
     const { error } = await supabase
       .from('weekly_allocations')
-      .insert(allocations as any)
+      .insert(rows)
     if (error) throw new Error(`Failed to insert allocations: ${error.message}`)
   }
 
   if (waitlisted.length > 0) {
+    const rows: WaitlistInsert[] = waitlisted.map((w) => ({
+      user_id: w.user_id,
+      date: w.date,
+    }))
     const { error } = await supabase
       .from('waitlist')
-      .insert(waitlisted as any)
+      .insert(rows)
     if (error) throw new Error(`Failed to insert waitlist: ${error.message}`)
   }
 }
