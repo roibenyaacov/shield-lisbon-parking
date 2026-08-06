@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { MAX_DAYS_PER_USER } from '@/lib/constants'
+import { addDays, format, parseISO, startOfWeek } from 'date-fns'
 
 export async function POST(request: Request) {
   try {
@@ -76,6 +78,55 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'You already have a spot for this day' }, { status: 409 })
     }
 
+    // Enforce the weekly cap. Leftover empty spots after allocation must not
+    // let a user exceed MAX_DAYS_PER_USER via manual claim.
+    const dayDate = parseISO(date)
+    const weekStart = format(startOfWeek(dayDate, { weekStartsOn: 1 }), 'yyyy-MM-dd')
+    const weekEnd = format(addDays(parseISO(weekStart), 4), 'yyyy-MM-dd')
+
+    const { count: weekDayCount, error: weekCountError } = await serviceClient
+      .from('weekly_allocations')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', user.id)
+      .gte('date', weekStart)
+      .lte('date', weekEnd)
+
+    if (weekCountError) {
+      console.error('Claim week-count lookup failed', weekCountError.message)
+      return NextResponse.json({ error: 'Unexpected error' }, { status: 500 })
+    }
+
+    if ((weekDayCount ?? 0) >= MAX_DAYS_PER_USER) {
+      return NextResponse.json(
+        { error: `Maximum ${MAX_DAYS_PER_USER} days per week reached` },
+        { status: 409 }
+      )
+    }
+
+    // When a waitlist exists for this date, only the FIFO head may claim an
+    // empty spot. Otherwise anyone browsing the grid can jump the queue —
+    // a concrete case after allocation leaves leftover spots while users
+    // remain waitlisted (e.g. fill-up stopped before MAX_DAYS_PER_USER).
+    const { data: waitlistHead, error: waitlistHeadError } = await serviceClient
+      .from('waitlist')
+      .select('user_id')
+      .eq('date', date)
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .maybeSingle()
+
+    if (waitlistHeadError) {
+      console.error('Claim waitlist head lookup failed', waitlistHeadError.message)
+      return NextResponse.json({ error: 'Unexpected error' }, { status: 500 })
+    }
+
+    if (waitlistHead && waitlistHead.user_id !== user.id) {
+      return NextResponse.json(
+        { error: 'This spot is reserved for the waitlist' },
+        { status: 409 }
+      )
+    }
+
     const { error: insertError } = await serviceClient
       .from('weekly_allocations')
       .insert({
@@ -92,11 +143,36 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Unexpected error' }, { status: 500 })
     }
 
-    await serviceClient
+    // Claimant must leave the waitlist in the same logical operation. If this
+    // delete fails, release_and_promote can later pick them as FIFO head, hit
+    // UNIQUE(user_id, date), and roll back every release for that date.
+    const { error: waitlistError } = await serviceClient
       .from('waitlist')
       .delete()
       .eq('user_id', user.id)
       .eq('date', date)
+
+    if (waitlistError) {
+      const { error: rollbackError } = await serviceClient
+        .from('weekly_allocations')
+        .delete()
+        .eq('user_id', user.id)
+        .eq('spot_id', spot_id)
+        .eq('date', date)
+
+      console.error('Claim waitlist cleanup failed', {
+        user_id: user.id,
+        spot_id,
+        date,
+        waitlist_error: waitlistError.message,
+        rollback_error: rollbackError?.message ?? null,
+      })
+
+      return NextResponse.json(
+        { error: 'Failed to finalize claim. Please try again.' },
+        { status: 500 }
+      )
+    }
 
     return NextResponse.json({ success: true })
   } catch (error) {
