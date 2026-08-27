@@ -1,7 +1,7 @@
 import { Resend } from 'resend'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Profile, ParkingSpot } from '@/types/db'
-import { format, nextMonday } from 'date-fns'
+import { addDays, format, nextMonday, parseISO } from 'date-fns'
 
 let _resend: Resend | null = null
 
@@ -246,16 +246,78 @@ function waitlistPromotionHtml(name: string, spotLabel: string, date: string): s
   `)
 }
 
+export interface SendAllocationEmailOptions {
+  /**
+   * Users who already received a successful allocation email for this week.
+   * Used by `/api/allocate` retries after `already_run` so we do not spam.
+   */
+  skipUserIds?: ReadonlySet<string>
+}
+
+export function hasEmailableAllocationRecipients(
+  allocations: { pass_number: number }[],
+  waitlisted: { user_id: string; date: string }[]
+): boolean {
+  return allocations.some((a) => a.pass_number !== 0) || waitlisted.length > 0
+}
+
+export function isAllocationEmailDeliveryIncomplete(
+  emailable: boolean,
+  emailSummary: EmailSendSummary | null,
+  emailError: string | null
+): boolean {
+  if (emailError) return true
+  if (!emailable) return false
+  if (!emailSummary) return true
+  return emailSummary.failed > 0 || emailSummary.sent === 0
+}
+
+/**
+ * Users with a successful `allocation` email_log row in the window that
+ * covers Friday publish for `weekStart` (the parking week's Monday).
+ * Missing `email_log` (migration not applied) returns an empty set so a
+ * retry still attempts delivery rather than permanently skipping.
+ */
+export async function getUsersWithSentAllocationEmails(
+  supabase: SupabaseClient,
+  weekStart: string
+): Promise<Set<string>> {
+  const windowStart = addDays(parseISO(weekStart), -3).toISOString()
+  const windowEnd = addDays(parseISO(weekStart), 7).toISOString()
+
+  const { data, error } = await supabase
+    .from('email_log')
+    .select('user_id')
+    .eq('type', 'allocation')
+    .eq('status', 'sent')
+    .gte('created_at', windowStart)
+    .lt('created_at', windowEnd)
+
+  if (error) {
+    console.error('email_log lookup for allocation dedupe failed (non-fatal):', error.message)
+    return new Set()
+  }
+
+  return new Set(
+    (data ?? [])
+      .map((row: { user_id: string | null }) => row.user_id)
+      .filter((id): id is string => Boolean(id))
+  )
+}
+
 export async function sendAllocationEmails(
   supabase: SupabaseClient,
   allocations: { user_id: string; spot_id: number; date: string; pass_number: number }[],
-  waitlisted: { user_id: string; date: string }[]
+  waitlisted: { user_id: string; date: string }[],
+  options: SendAllocationEmailOptions = {}
 ): Promise<EmailSendSummary> {
   const summary: EmailSendSummary = { attempted: 0, sent: 0, failed: 0, errors: [] }
+  const skipUserIds = options.skipUserIds
 
   const userAllocations = new Map<string, { date: string; spot_id: number }[]>()
   for (const alloc of allocations) {
     if (alloc.pass_number === 0) continue
+    if (skipUserIds?.has(alloc.user_id)) continue
     const list = userAllocations.get(alloc.user_id) ?? []
     list.push({ date: alloc.date, spot_id: alloc.spot_id })
     userAllocations.set(alloc.user_id, list)
@@ -263,6 +325,7 @@ export async function sendAllocationEmails(
 
   const userWaitlist = new Map<string, string[]>()
   for (const w of waitlisted) {
+    if (skipUserIds?.has(w.user_id)) continue
     const list = userWaitlist.get(w.user_id) ?? []
     list.push(w.date)
     userWaitlist.set(w.user_id, list)
