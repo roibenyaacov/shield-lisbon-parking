@@ -17,6 +17,10 @@ interface UserDayRequest {
   isTeamDay: boolean
 }
 
+function isUnlinkedReservedSpot(spot: ParkingSpot): boolean {
+  return !spot.fixed_user_id && (!!spot.reserved_name || spot.label === '40')
+}
+
 function pickSpot(
   availableSpots: ParkingSpot[],
   vehicleType: string | null
@@ -84,6 +88,10 @@ export async function runAllocation(
     const assignedToday = new Set<string>()
 
     const fixedSpots = spots.filter((s) => s.fixed_user_id)
+    for (const spot of spots.filter(isUnlinkedReservedSpot)) {
+      occupiedToday.add(spot.id)
+    }
+
     for (const spot of fixedSpots) {
       if (!releasedUserIds.has(spot.fixed_user_id!)) {
         occupiedToday.add(spot.id)
@@ -244,14 +252,14 @@ export async function saveAllocations(
   if (allocations.length > 0) {
     const { error } = await supabase
       .from('weekly_allocations')
-      .insert(allocations as any)
+      .insert(allocations as WeeklyAllocationInsert[])
     if (error) throw new Error(`Failed to insert allocations: ${error.message}`)
   }
 
   if (waitlisted.length > 0) {
     const { error } = await supabase
       .from('waitlist')
-      .insert(waitlisted as any)
+      .insert(waitlisted as WaitlistInsert[])
     if (error) throw new Error(`Failed to insert waitlist: ${error.message}`)
   }
 }
