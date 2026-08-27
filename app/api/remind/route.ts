@@ -21,13 +21,12 @@ export async function GET(request: NextRequest) {
       const nowLisbon  = toZonedTime(new Date(), LISBON_TIMEZONE)
       const lisbonHour = nowLisbon.getHours()
       // Day guard: only run on Wednesday.
-      // Hour guard is intentionally broad (15-23) to tolerate GitHub
-      // Actions cron delays of up to several hours.  The reminder is
-      // naturally idempotent — an extra send is harmless.
+      // Hour guard must be exact because the workflow schedules adjacent
+      // UTC hours for DST; the non-target run would otherwise send a
+      // duplicate or early reminder.
       if (
         nowLisbon.getDay() !== REQUEST_OPEN_DAY ||
-        lisbonHour < 15 ||
-        lisbonHour > 23
+        lisbonHour !== REQUEST_OPEN_HOUR
       ) {
         return NextResponse.json({
           skipped: true,
