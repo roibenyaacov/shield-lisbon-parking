@@ -5,40 +5,14 @@ export const dynamic = 'force-dynamic'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import type { Session, SupabaseClient } from '@supabase/supabase-js'
-import { createClient } from '@/lib/supabase/client'
+import { createRecoveryClient } from '@/lib/supabase/client'
 import {
   cleanResetPasswordUrl,
-  hasRecoveryParams,
   parseRecoveryUrl,
-  wait,
 } from '@/lib/auth/recovery'
 import { Button } from '@/components/ui/Button'
 import { Lock, Eye, EyeOff, CheckCircle2 } from 'lucide-react'
 import { motion } from 'framer-motion'
-
-const RECOVERY_WAIT_MS = 5000
-const RECOVERY_POLL_MS = 250
-
-async function getActiveSession(supabase: SupabaseClient): Promise<Session | null> {
-  const { data } = await supabase.auth.getSession()
-  return data.session ?? null
-}
-
-async function waitForRecoverySession(
-  supabase: SupabaseClient,
-  timeoutMs = RECOVERY_WAIT_MS
-): Promise<Session | null> {
-  const started = Date.now()
-
-  while (Date.now() - started < timeoutMs) {
-    const session = await getActiveSession(supabase)
-    if (session) return session
-    await wait(RECOVERY_POLL_MS)
-  }
-
-  return null
-}
 
 export default function ResetPasswordPage() {
   const [password, setPassword] = useState('')
@@ -50,7 +24,7 @@ export default function ResetPasswordPage() {
   const [ready, setReady] = useState(false)
   const [bootstrapping, setBootstrapping] = useState(true)
   const router = useRouter()
-  const supabase = useMemo(() => createClient(), [])
+  const supabase = useMemo(() => createRecoveryClient(), [])
   const bootstrapStartedRef = useRef(false)
 
   useEffect(() => {
@@ -86,80 +60,51 @@ export default function ResetPasswordPage() {
         return
       }
 
-      const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-        if (!session) return
-        if (
-          event === 'PASSWORD_RECOVERY' ||
-          event === 'SIGNED_IN' ||
-          event === 'INITIAL_SESSION' ||
-          event === 'TOKEN_REFRESHED'
-        ) {
-          markReady()
-        }
-      })
-
       try {
-        // @supabase/ssr auto-detects ?code= in the URL (PKCE). Give it time first.
-        let session = await waitForRecoverySession(supabase, hasRecoveryParams(params) ? RECOVERY_WAIT_MS : 1500)
-        if (session) {
-          markReady()
-          return
-        }
+        // This isolated client has automatic URL detection disabled. Finish
+        // loading its stored session before explicitly consuming credentials,
+        // so stale session recovery cannot race and overwrite the new session.
+        const { error: initializeError } = await supabase.auth.initialize()
 
         if (params.tokenHash && params.type === 'recovery') {
-          const { error: verifyError } = await supabase.auth.verifyOtp({
+          const { data, error: verifyError } = await supabase.auth.verifyOtp({
             type: 'recovery',
             token_hash: params.tokenHash,
           })
-          if (verifyError) {
-            session = await getActiveSession(supabase)
-            if (session) {
-              markReady()
-              return
-            }
-            throw verifyError
-          }
+          if (verifyError || !data.session) throw verifyError ?? new Error('Recovery session missing')
 
           markReady()
           return
         }
 
         if (params.accessToken && params.refreshToken) {
-          const { error: sessionError } = await supabase.auth.setSession({
+          // createBrowserClient uses PKCE and rejects implicit callback URLs.
+          // Always install the recovery tokens explicitly so a pre-existing
+          // session can never be mistaken for the recovery session.
+          const { data, error: sessionError } = await supabase.auth.setSession({
             access_token: params.accessToken,
             refresh_token: params.refreshToken,
           })
-          if (sessionError) {
-            session = await getActiveSession(supabase)
-            if (session) {
-              markReady()
-              return
-            }
-            throw sessionError
-          }
+          if (sessionError || !data.session) throw sessionError ?? new Error('Recovery session missing')
 
           markReady()
           return
         }
 
         if (params.code) {
-          // Manual exchange only if auto-detect did not finish in time.
-          const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(params.code)
-          if (exchangeError) {
-            session = await getActiveSession(supabase)
-            if (session) {
-              markReady()
-              return
-            }
-            throw exchangeError
+          const { data, error: exchangeError } = await supabase.auth.exchangeCodeForSession(params.code)
+          if (exchangeError || !data.session) {
+            throw exchangeError ?? new Error('Recovery session missing')
           }
 
           markReady()
           return
         }
 
-        session = await getActiveSession(supabase)
-        if (session) {
+        if (initializeError) throw initializeError
+
+        const { data } = await supabase.auth.getSession()
+        if (data.session) {
           markReady()
           return
         }
@@ -171,12 +116,6 @@ export default function ResetPasswordPage() {
           recovery_type: params.type,
         })
       } catch (sessionError) {
-        const recovered = await getActiveSession(supabase)
-        if (recovered) {
-          markReady()
-          return
-        }
-
         fail('Your reset link has expired or is invalid. Please request a new one.', {
           has_code: Boolean(params.code),
           has_token_hash: Boolean(params.tokenHash),
@@ -184,8 +123,6 @@ export default function ResetPasswordPage() {
           recovery_type: params.type,
           message: sessionError instanceof Error ? sessionError.message : String(sessionError),
         })
-      } finally {
-        subscription.unsubscribe()
       }
     }
 
