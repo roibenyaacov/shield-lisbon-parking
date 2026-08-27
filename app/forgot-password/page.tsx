@@ -22,13 +22,10 @@ export default function ForgotPasswordPage() {
     setError(null)
     setLoading(true)
 
-    const isSmartyProdHost = /(^|\.)smarty-parking-portugal\.com$/i.test(window.location.hostname)
-    const redirectTo = isSmartyProdHost
-      ? 'https://www.smarty-parking-portugal.com/api/auth/callback?next=/reset-password'
-      : `${window.location.origin}/api/auth/callback?next=/reset-password`
-
     const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo,
+      // Keep recovery parameters in the browser so both PKCE query codes and
+      // implicit-flow hash tokens reach the dedicated recovery bootstrap.
+      redirectTo: `${window.location.origin}/reset-password`,
     })
 
     if (resetError) {
