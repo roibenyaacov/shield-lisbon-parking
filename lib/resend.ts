@@ -16,6 +16,16 @@ const FROM_EMAIL  = 'Parking App <noreply@smarty-parking-portugal.com>'
 const REPLY_TO    = 'parking@shieldfc.com'
 const SEND_CONCURRENCY = 5
 
+// Resend's default limit is 10 requests/second.  Five concurrent workers
+// finish each send in well under 200ms, so without pacing we blast ~25
+// starts into the first second: the first 10 succeed and the rest fail
+// with 429.  Production Wednesday reminders have done this every week
+// since the concurrency helper landed (25 attempted, 10 sent, 15 failed).
+export const RESEND_MIN_INTERVAL_MS = 120
+export const RESEND_RATE_LIMIT_COOLDOWN_MS = 1100
+export const RESEND_RATE_LIMIT_RETRIES = 4
+export const REMINDER_DEDUPE_WINDOW_MS = 5 * 24 * 60 * 60 * 1000
+
 const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://smarty-parking-portugal.com'
 const LOGO_URL = `${BASE_URL}/logo.png`
 
@@ -34,6 +44,122 @@ export interface EmailSendSummary {
   sent:      number
   failed:    number
   errors:    EmailSendError[]
+}
+
+export interface SendSlotState {
+  nextSlotMs: number
+}
+
+export interface SendRegistrationReminderOptions {
+  /** Users who already received a successful reminder in this window. */
+  skipUserIds?: ReadonlySet<string>
+  /** Emails that already received a successful reminder (covers null user_id). */
+  skipEmails?: ReadonlySet<string>
+}
+
+export function isResendRateLimitError(message: string): boolean {
+  return /too many requests|rate limit/i.test(message)
+}
+
+/** Space send starts so a rolling 1s window stays under Resend's 10 req/s. */
+export function scheduleSendSlot(
+  state: SendSlotState,
+  nowMs: number,
+  minIntervalMs = RESEND_MIN_INTERVAL_MS
+): { waitMs: number; nextState: SendSlotState } {
+  const slotMs = Math.max(nowMs, state.nextSlotMs)
+  return {
+    waitMs: slotMs - nowMs,
+    nextState: { nextSlotMs: slotMs + minIntervalMs },
+  }
+}
+
+/** After a 429, push the next start past the current 1s rate-limit window. */
+export function applyRateLimitCooldown(
+  state: SendSlotState,
+  nowMs: number,
+  cooldownMs = RESEND_RATE_LIMIT_COOLDOWN_MS
+): SendSlotState {
+  return { nextSlotMs: Math.max(state.nextSlotMs, nowMs + cooldownMs) }
+}
+
+export function isReminderEmailDeliveryIncomplete(summary: EmailSendSummary): boolean {
+  return summary.failed > 0
+}
+
+let sendSlotState: SendSlotState = { nextSlotMs: 0 }
+
+async function waitForSendSlot(): Promise<void> {
+  const scheduled = scheduleSendSlot(sendSlotState, Date.now())
+  sendSlotState = scheduled.nextState
+  if (scheduled.waitMs > 0) {
+    await new Promise((resolve) => setTimeout(resolve, scheduled.waitMs))
+  }
+}
+
+function noteRateLimited(): void {
+  sendSlotState = applyRateLimitCooldown(sendSlotState, Date.now())
+}
+
+async function sendResendEmail(params: {
+  to:      string
+  subject: string
+  html:    string
+}): Promise<{ messageId: string | null }> {
+  let lastMessage = 'unknown send error'
+  for (let attempt = 0; attempt <= RESEND_RATE_LIMIT_RETRIES; attempt++) {
+    await waitForSendSlot()
+    const res = await getResend().emails.send({
+      from:    FROM_EMAIL,
+      replyTo: REPLY_TO,
+      to:      params.to,
+      subject: params.subject,
+      html:    params.html,
+    })
+    if (!res.error) {
+      return { messageId: res.data?.id ?? null }
+    }
+    lastMessage = res.error.message
+    if (!isResendRateLimitError(lastMessage) || attempt === RESEND_RATE_LIMIT_RETRIES) {
+      throw new Error(lastMessage)
+    }
+    noteRateLimited()
+  }
+  throw new Error(lastMessage)
+}
+
+/**
+ * Users (and emails) with a successful `reminder` email_log row in the last
+ * 5 days.  Used so a 500-driven cron retry does not re-send to the 10 people
+ * who already got through the rate limit.  A missing `email_log` table
+ * returns empty sets so we still attempt delivery.
+ */
+export async function getUsersWithSentReminderEmails(
+  supabase: SupabaseClient,
+  now: Date = new Date()
+): Promise<{ userIds: Set<string>; emails: Set<string> }> {
+  const windowStart = new Date(now.getTime() - REMINDER_DEDUPE_WINDOW_MS).toISOString()
+
+  const { data, error } = await supabase
+    .from('email_log')
+    .select('user_id, email')
+    .eq('type', 'reminder')
+    .eq('status', 'sent')
+    .gte('created_at', windowStart)
+
+  if (error) {
+    console.error('email_log lookup for reminder dedupe failed (non-fatal):', error.message)
+    return { userIds: new Set(), emails: new Set() }
+  }
+
+  const userIds = new Set<string>()
+  const emails = new Set<string>()
+  for (const row of data ?? []) {
+    const typed = row as { user_id: string | null; email: string | null }
+    if (typed.user_id) userIds.add(typed.user_id)
+    if (typed.email) emails.add(typed.email.toLowerCase())
+  }
+  return { userIds, emails }
 }
 
 // Bounded-concurrency map: never starts more than `concurrency` promises at
@@ -282,10 +408,10 @@ export async function sendAllocationEmails(
   const profileMap = new Map(profiles.map((p) => [p.id, p]))
   const spotMap    = new Map(spots.map((s) => [s.id, s]))
 
-  // Build one self-contained payload per user, then dispatch in parallel
-  // with bounded concurrency.  This keeps batch latency low even with
-  // many recipients and ensures a single Resend rate-limit response does
-  // not silently drop emails for the remaining users.
+  // Build one self-contained payload per user, then dispatch with
+  // bounded concurrency plus global start-spacing.  Spacing keeps us
+  // under Resend's 10 req/s default; 429s retry after a cooldown so a
+  // single rate-limit response does not drop the rest of the batch.
   interface Payload {
     profile:       Profile
     assignments:   { date: string; spotLabel: string }[]
@@ -322,9 +448,7 @@ export async function sendAllocationEmails(
   if (payloads.length === 0) return summary
 
   const results = await mapWithConcurrency(payloads, SEND_CONCURRENCY, async (p) => {
-    const res = await getResend().emails.send({
-      from:    FROM_EMAIL,
-      replyTo: REPLY_TO,
+    return sendResendEmail({
       to:      p.profile.email!,
       subject: p.subject,
       html:    weeklyAllocationHtml(
@@ -333,8 +457,6 @@ export async function sendAllocationEmails(
         p.waitDays
       ),
     })
-    if (res.error) throw new Error(res.error.message)
-    return { messageId: res.data?.id ?? null }
   })
 
   const now = new Date().toISOString()
@@ -406,9 +528,12 @@ function registrationReminderHtml(name: string, weekLabel: string): string {
 }
 
 export async function sendRegistrationReminders(
-  supabase: SupabaseClient
+  supabase: SupabaseClient,
+  options: SendRegistrationReminderOptions = {}
 ): Promise<EmailSendSummary> {
   const summary: EmailSendSummary = { attempted: 0, sent: 0, failed: 0, errors: [] }
+  const skipUserIds = options.skipUserIds
+  const skipEmails  = options.skipEmails
 
   // Exclude fixed-spot holders — their spot is auto-assigned and they
   // don't need to register during the Wed–Fri window.
@@ -431,17 +556,18 @@ export async function sendRegistrationReminders(
   const weekStart = nextMonday(new Date())
   const weekLabel = format(weekStart, 'MMMM d, yyyy')
 
-  const recipients = (profilesData as Profile[]).filter(
-    (p) => p.email && !fixedOwnerIds.has(p.id)
-  )
+  const recipients = (profilesData as Profile[]).filter((p) => {
+    if (!p.email || fixedOwnerIds.has(p.id)) return false
+    if (skipUserIds?.has(p.id)) return false
+    if (skipEmails?.has(p.email.toLowerCase())) return false
+    return true
+  })
 
   summary.attempted = recipients.length
   if (recipients.length === 0) return summary
 
   const results = await mapWithConcurrency(recipients, SEND_CONCURRENCY, async (profile) => {
-    const res = await getResend().emails.send({
-      from:    FROM_EMAIL,
-      replyTo: REPLY_TO,
+    return sendResendEmail({
       to:      profile.email!,
       subject: `🅿️ Parking Registration Open — Week of ${format(weekStart, 'MMM d')}`,
       html:    registrationReminderHtml(
@@ -449,8 +575,6 @@ export async function sendRegistrationReminders(
         weekLabel
       ),
     })
-    if (res.error) throw new Error(res.error.message)
-    return { messageId: res.data?.id ?? null }
   })
 
   const now = new Date().toISOString()
@@ -498,14 +622,11 @@ export async function sendWaitlistPromotionEmail(
   const summary: EmailSendSummary = { attempted: 1, sent: 0, failed: 0, errors: [] }
 
   try {
-    const res = await getResend().emails.send({
-      from:    FROM_EMAIL,
-      replyTo: REPLY_TO,
+    const sent = await sendResendEmail({
       to:      email,
       subject: `🎉 You Got a Spot! — ${format(new Date(date), 'EEEE, MMM d')}`,
       html:    waitlistPromotionHtml(name, spotLabel, date),
     })
-    if (res.error) throw new Error(res.error.message)
 
     summary.sent = 1
     await logEmail(supabase, {
@@ -513,7 +634,7 @@ export async function sendWaitlistPromotionEmail(
       email,
       type:                'waitlist-promotion',
       status:              'sent',
-      provider_message_id: res.data?.id ?? null,
+      provider_message_id: sent.messageId,
       sent_at:             new Date().toISOString(),
     })
   } catch (err) {
@@ -544,14 +665,11 @@ export async function sendTestEmail(
   const summary: EmailSendSummary = { attempted: 1, sent: 0, failed: 0, errors: [] }
 
   try {
-    const res = await getResend().emails.send({
-      from:    FROM_EMAIL,
-      replyTo: REPLY_TO,
+    const sent = await sendResendEmail({
       to:      opts.to,
       subject: opts.subject,
       html:    opts.html,
     })
-    if (res.error) throw new Error(res.error.message)
 
     summary.sent = 1
     await logEmail(supabase, {
@@ -559,7 +677,7 @@ export async function sendTestEmail(
       email:               opts.to,
       type:                `test:${opts.type}`,
       status:              'sent',
-      provider_message_id: res.data?.id ?? null,
+      provider_message_id: sent.messageId,
       sent_at:             new Date().toISOString(),
     })
   } catch (err) {
