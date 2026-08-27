@@ -2,12 +2,11 @@ name: "Cron: Wednesday reminder emails"
 
 on:
   schedule:
-    # Single schedule at 17:00 UTC.
-    # Winter (WET = UTC+0): 17:00 local → fine for afternoon reminder
-    # Summer (WEST = UTC+1): 18:00 local → fine for afternoon reminder
-    # GitHub Actions can delay 30-90 min, so the API guard accepts
-    # any hour on Wednesday between 15:00-23:00 Lisbon time.
-    - cron: "0 17 * * 3"
+    # DST-safe pair: exactly one starts at 19:00 Lisbon time.
+    # UTC+0 (winter): 19:00 UTC = 19:00 WET
+    # UTC+1 (summer): 18:00 UTC = 19:00 WEST
+    - cron: "0 18 * * 3"
+    - cron: "0 19 * * 3"
   workflow_dispatch: {}
 
 jobs:
