@@ -52,6 +52,7 @@ export default function ResetPasswordPage() {
   const router = useRouter()
   const supabase = useMemo(() => createClient(), [])
   const bootstrapStartedRef = useRef(false)
+  const pendingTokenHashRef = useRef<string | null>(null)
 
   useEffect(() => {
     if (bootstrapStartedRef.current) return
@@ -86,6 +87,17 @@ export default function ResetPasswordPage() {
         return
       }
 
+      // token_hash links are verified only when the user submits the form. Corporate mail
+      // scanners (e.g. Microsoft Safe Links) open links before the user does, and verifying on
+      // page load would burn the single-use token before the user ever sees the page.
+      if (params.tokenHash && params.type === 'recovery') {
+        pendingTokenHashRef.current = params.tokenHash
+        if (cancelled) return
+        setReady(true)
+        setBootstrapping(false)
+        return
+      }
+
       const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
         if (!session) return
         if (
@@ -102,24 +114,6 @@ export default function ResetPasswordPage() {
         // @supabase/ssr auto-detects ?code= in the URL (PKCE). Give it time first.
         let session = await waitForRecoverySession(supabase, hasRecoveryParams(params) ? RECOVERY_WAIT_MS : 1500)
         if (session) {
-          markReady()
-          return
-        }
-
-        if (params.tokenHash && params.type === 'recovery') {
-          const { error: verifyError } = await supabase.auth.verifyOtp({
-            type: 'recovery',
-            token_hash: params.tokenHash,
-          })
-          if (verifyError) {
-            session = await getActiveSession(supabase)
-            if (session) {
-              markReady()
-              return
-            }
-            throw verifyError
-          }
-
           markReady()
           return
         }
@@ -221,6 +215,22 @@ export default function ResetPasswordPage() {
 
     setError(null)
     setLoading(true)
+
+    const tokenHash = pendingTokenHashRef.current
+    if (tokenHash) {
+      const { error: verifyError } = await supabase.auth.verifyOtp({
+        type: 'recovery',
+        token_hash: tokenHash,
+      })
+      if (verifyError) {
+        console.error('Password recovery verifyOtp failed', { message: verifyError.message })
+        setError('Your reset link has expired or is invalid. Please request a new one.')
+        setLoading(false)
+        return
+      }
+      pendingTokenHashRef.current = null
+      cleanResetPasswordUrl()
+    }
 
     const { error: updateError } = await supabase.auth.updateUser({
       password,
