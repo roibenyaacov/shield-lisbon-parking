@@ -73,7 +73,7 @@ export default function ForgotPasswordPage() {
               </p>
               <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4">
                 <p className="text-xs text-blue-700">
-                  Click the link in your email to choose a new password. The link expires in 60 minutes.
+                  Click the link in your email to choose a new password. The link expires in 24 hours.
                 </p>
               </div>
               <Link
