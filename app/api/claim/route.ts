@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 
+const FORMAL_ALLOCATION_PASSES = [1, 2, 3, 4]
+
 export async function POST(request: Request) {
   try {
     const supabase = await createClient()
@@ -26,6 +28,32 @@ export async function POST(request: Request) {
     }
 
     const serviceClient = await createServiceClient()
+
+    // Claims are only valid after the allocation job has published this
+    // date. Otherwise a user could pre-claim next week's empty grid before
+    // the fair allocation run.
+    const [{ data: publishedAlloc }, { data: publishedWaitlist }] = await Promise.all([
+      serviceClient
+        .from('weekly_allocations')
+        .select('id')
+        .eq('date', date)
+        .in('pass_number', FORMAL_ALLOCATION_PASSES)
+        .limit(1)
+        .maybeSingle(),
+      serviceClient
+        .from('waitlist')
+        .select('id')
+        .eq('date', date)
+        .limit(1)
+        .maybeSingle(),
+    ])
+
+    if (!publishedAlloc && !publishedWaitlist) {
+      return NextResponse.json(
+        { error: 'Allocations are not published for this date yet' },
+        { status: 409 }
+      )
+    }
 
     // Fetch spot and validate it is claimable
     const { data: spot } = await serviceClient
