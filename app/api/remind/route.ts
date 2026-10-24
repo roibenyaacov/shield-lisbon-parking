@@ -13,21 +13,16 @@ export async function GET(request: NextRequest) {
     const isCronAuthed = !!cronSecret && authHeader === `Bearer ${cronSecret}`
 
     // ── DST-safe cron guard ──────────────────────────────────────────────
-    // Vercel cron runs in UTC.  We schedule both 18:00 UTC and 19:00 UTC
+    // GitHub Actions cron runs in UTC. We schedule both 18:00 UTC and 19:00 UTC
     // each Wednesday — exactly one matches 19:00 Lisbon depending on DST.
     // Skip the run if Lisbon time isn't the target (Wed 19:00).  Admin
     // manual triggers bypass the guard.
     if (isCronAuthed) {
       const nowLisbon  = toZonedTime(new Date(), LISBON_TIMEZONE)
       const lisbonHour = nowLisbon.getHours()
-      // Day guard: only run on Wednesday.
-      // Hour guard is intentionally broad (15-23) to tolerate GitHub
-      // Actions cron delays of up to several hours.  The reminder is
-      // naturally idempotent — an extra send is harmless.
       if (
         nowLisbon.getDay() !== REQUEST_OPEN_DAY ||
-        lisbonHour < 15 ||
-        lisbonHour > 23
+        lisbonHour !== REQUEST_OPEN_HOUR
       ) {
         return NextResponse.json({
           skipped: true,
