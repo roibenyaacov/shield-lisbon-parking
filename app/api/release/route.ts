@@ -178,10 +178,22 @@ async function sendPromotionEmail(
   date: string
 ): Promise<void> {
   try {
-    const [{ data: rawProfile }, { data: rawSpot }] = await Promise.all([
-      serviceClient.from('profiles').select('*').eq('id', promotedUserId).single(),
-      serviceClient.from('parking_spots').select('*').eq('id', spotId).single(),
-    ])
+    const [{ data: rawProfile, error: profileError }, { data: rawSpot, error: spotError }] =
+      await Promise.all([
+        serviceClient.from('profiles').select('*').eq('id', promotedUserId).single(),
+        serviceClient.from('parking_spots').select('*').eq('id', spotId).single(),
+      ])
+
+    if (profileError) {
+      throw new Error(
+        `Failed to load promoted user profile for email: ${profileError.message}`
+      )
+    }
+    if (spotError) {
+      throw new Error(
+        `Failed to load promoted spot for email: ${spotError.message}`
+      )
+    }
 
     const promotedProfile = rawProfile as Profile | null
     const spot = rawSpot as ParkingSpot | null
@@ -194,6 +206,11 @@ async function sendPromotionEmail(
         promotedProfile.full_name ?? 'User',
         spot.label,
         date
+      )
+    } else {
+      console.error(
+        'Waitlist promotion email skipped: missing profile email or spot',
+        { promotedUserId, spotId, hasEmail: !!promotedProfile?.email, hasSpot: !!spot }
       )
     }
   } catch (emailError) {
