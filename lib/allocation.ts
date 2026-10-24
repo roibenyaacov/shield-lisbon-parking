@@ -3,7 +3,7 @@ import type { Profile, ParkingSpot, WeeklyRequest, WeeklyAllocationInsert, Waitl
 import { TEAM_DAY_MAP, DAY_NAMES, DAY_KEYS, MAX_DAYS_PER_USER } from '@/lib/constants'
 import { addDays, format, parseISO } from 'date-fns'
 
-interface AllocationEntry {
+export interface AllocationEntry {
   user_id: string
   spot_id: number
   date: string
@@ -206,15 +206,58 @@ export async function runAllocation(
   return { allocations: allAllocations, waitlisted: allWaitlisted }
 }
 
+/** Monday–Friday dates for a parking week starting on `weekStart`. */
+export function weekDatesFor(weekStart: string): string[] {
+  return Array.from({ length: 5 }, (_, i) =>
+    format(addDays(parseISO(weekStart), i), 'yyyy-MM-dd')
+  )
+}
+
+/**
+ * Load persisted allocation + waitlist rows for a week so callers (e.g.
+ * `/api/allocate` `already_run` retries) can resend notification emails
+ * without re-running the allocator.
+ */
+export async function loadWeekAllocationResults(
+  supabase: SupabaseClient,
+  weekStart: string
+): Promise<{
+  allocations: AllocationEntry[]
+  waitlisted: { user_id: string; date: string }[]
+}> {
+  const weekDates = weekDatesFor(weekStart)
+
+  const [allocsRes, waitRes] = await Promise.all([
+    supabase
+      .from('weekly_allocations')
+      .select('user_id, spot_id, date, pass_number')
+      .in('date', weekDates),
+    supabase
+      .from('waitlist')
+      .select('user_id, date')
+      .in('date', weekDates),
+  ])
+
+  if (allocsRes.error) {
+    throw new Error(`Failed to load week allocations: ${allocsRes.error.message}`)
+  }
+  if (waitRes.error) {
+    throw new Error(`Failed to load week waitlist: ${waitRes.error.message}`)
+  }
+
+  return {
+    allocations: (allocsRes.data ?? []) as AllocationEntry[],
+    waitlisted: (waitRes.data ?? []) as { user_id: string; date: string }[],
+  }
+}
+
 export async function saveAllocations(
   supabase: SupabaseClient,
   weekStart: string,
   allocations: AllocationEntry[],
   waitlisted: { user_id: string; date: string }[]
 ): Promise<void> {
-  const weekDates = Array.from({ length: 5 }, (_, i) =>
-    format(addDays(parseISO(weekStart), i), 'yyyy-MM-dd')
-  )
+  const weekDates = weekDatesFor(weekStart)
 
   // Validate before the destructive delete below.  The delete and insert
   // are not in a transaction, so an insert that trips UNIQUE(user_id,
@@ -242,16 +285,26 @@ export async function saveAllocations(
   }
 
   if (allocations.length > 0) {
+    const rows: WeeklyAllocationInsert[] = allocations.map((a) => ({
+      user_id: a.user_id,
+      spot_id: a.spot_id,
+      date: a.date,
+      pass_number: a.pass_number,
+    }))
     const { error } = await supabase
       .from('weekly_allocations')
-      .insert(allocations as any)
+      .insert(rows)
     if (error) throw new Error(`Failed to insert allocations: ${error.message}`)
   }
 
   if (waitlisted.length > 0) {
+    const rows: WaitlistInsert[] = waitlisted.map((w) => ({
+      user_id: w.user_id,
+      date: w.date,
+    }))
     const { error } = await supabase
       .from('waitlist')
-      .insert(waitlisted as any)
+      .insert(rows)
     if (error) throw new Error(`Failed to insert waitlist: ${error.message}`)
   }
 }
