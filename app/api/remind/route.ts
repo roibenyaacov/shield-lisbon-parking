@@ -20,14 +20,11 @@ export async function GET(request: NextRequest) {
     if (isCronAuthed) {
       const nowLisbon  = toZonedTime(new Date(), LISBON_TIMEZONE)
       const lisbonHour = nowLisbon.getHours()
-      // Day guard: only run on Wednesday.
-      // Hour guard is intentionally broad (15-23) to tolerate GitHub
-      // Actions cron delays of up to several hours.  The reminder is
-      // naturally idempotent — an extra send is harmless.
+      // The workflow runs at adjacent UTC hours for DST.  Accept only the
+      // configured Lisbon hour so the non-matching schedule cannot also send.
       if (
         nowLisbon.getDay() !== REQUEST_OPEN_DAY ||
-        lisbonHour < 15 ||
-        lisbonHour > 23
+        lisbonHour !== REQUEST_OPEN_HOUR
       ) {
         return NextResponse.json({
           skipped: true,
