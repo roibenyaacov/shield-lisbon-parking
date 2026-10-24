@@ -1,10 +1,10 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { runAllocation, saveAllocations } from '@/lib/allocation'
-import { nextMonday, format } from 'date-fns'
+import { getDefaultAllocationWeekStart } from '@/lib/allocationWeek'
 import { toZonedTime } from 'date-fns-tz'
 import { sendAllocationEmails, type EmailSendSummary } from '@/lib/resend'
-import { LISBON_TIMEZONE, ALLOCATION_DAY, ALLOCATION_HOUR } from '@/lib/constants'
+import { LISBON_TIMEZONE, ALLOCATION_DAY } from '@/lib/constants'
 import type { Profile } from '@/types/db'
 
 async function handleAllocate(request: NextRequest, weekStartOverride?: string) {
@@ -78,7 +78,7 @@ async function handleAllocate(request: NextRequest, weekStartOverride?: string) 
   }
 
   const serviceClient = await createServiceClient()
-  const weekStart = weekStartOverride ?? format(nextMonday(new Date()), 'yyyy-MM-dd')
+  const weekStart = weekStartOverride ?? getDefaultAllocationWeekStart()
 
   // ── Idempotency guard ─────────────────────────────────────────────────
   // Check specifically for the first day of the target week.  Checking
