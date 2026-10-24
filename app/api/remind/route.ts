@@ -1,8 +1,12 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { toZonedTime } from 'date-fns-tz'
-import { sendRegistrationReminders } from '@/lib/resend'
-import { LISBON_TIMEZONE, REQUEST_OPEN_DAY, REQUEST_OPEN_HOUR } from '@/lib/constants'
+import {
+  getUsersWithSentReminderEmails,
+  isReminderEmailDeliveryIncomplete,
+  sendRegistrationReminders,
+} from '@/lib/resend'
+import { LISBON_TIMEZONE, REQUEST_OPEN_DAY } from '@/lib/constants'
 import type { Profile } from '@/types/db'
 
 export async function GET(request: NextRequest) {
@@ -59,11 +63,32 @@ export async function GET(request: NextRequest) {
     }
 
     const serviceClient = await createServiceClient()
-    const emailSummary  = await sendRegistrationReminders(serviceClient)
+    const alreadySent   = await getUsersWithSentReminderEmails(serviceClient)
+    const emailSummary  = await sendRegistrationReminders(serviceClient, {
+      skipUserIds: alreadySent.userIds,
+      skipEmails:  alreadySent.emails,
+    })
+
+    // Partial Resend 429s used to return HTTP 200 (`success: true`, sent: 10,
+    // failed: 15), so GitHub Actions marked the cron green and never retried.
+    // Fail the request when anyone is still undelivered so a re-run can
+    // finish the rest (already-sent recipients are skipped above).
+    if (isReminderEmailDeliveryIncomplete(emailSummary)) {
+      return NextResponse.json(
+        {
+          success:       false,
+          sent:          emailSummary.sent,
+          skipped:       alreadySent.userIds.size,
+          email_summary: emailSummary,
+        },
+        { status: 500 }
+      )
+    }
 
     return NextResponse.json({
       success:       true,
       sent:          emailSummary.sent,
+      skipped:       alreadySent.userIds.size,
       email_summary: emailSummary,
     })
   } catch (error) {
