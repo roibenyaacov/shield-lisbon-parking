@@ -4,7 +4,8 @@ import { runAllocation, saveAllocations } from '@/lib/allocation'
 import { nextMonday, format } from 'date-fns'
 import { toZonedTime } from 'date-fns-tz'
 import { sendAllocationEmails, type EmailSendSummary } from '@/lib/resend'
-import { LISBON_TIMEZONE, ALLOCATION_DAY, ALLOCATION_HOUR } from '@/lib/constants'
+import { LISBON_TIMEZONE, ALLOCATION_DAY } from '@/lib/constants'
+import { isCronAllocationWindow } from '@/lib/cron-window'
 import type { Profile } from '@/types/db'
 
 async function handleAllocate(request: NextRequest, weekStartOverride?: string) {
@@ -15,26 +16,20 @@ async function handleAllocate(request: NextRequest, weekStartOverride?: string) 
   // matches an empty Authorization header.
   const isCronAuthed = !!cronSecret && authHeader === `Bearer ${cronSecret}`
 
-  // ── DST-safe cron guard ────────────────────────────────────────────────
-  // Vercel cron runs in UTC and has no timezone support, so we schedule
-  // the cron at BOTH 07:00 UTC and 08:00 UTC each Friday.  Exactly one of
-  // those fires at 08:00 Lisbon time depending on whether DST is active.
-  // This guard ignores the run unless the current Lisbon time matches the
-  // target (Friday 08:00).  Admin manual triggers (non-cron auth) bypass
-  // this so they can re-run anytime.
+  // ── Cron guard ─────────────────────────────────────────────────────────
+  // The Friday job is scheduled at 07:00 UTC (08:00 Lisbon in summer,
+  // 07:00 Lisbon in winter). GitHub Actions often starts it hours later.
+  // Accept the rest of Friday Lisbon so a late start still publishes the
+  // week. Admin cookie triggers bypass this and can re-run anytime.
   if (isCronAuthed) {
     const nowLisbon = toZonedTime(new Date(), LISBON_TIMEZONE)
     const lisbonHour = nowLisbon.getHours()
-    // Day guard: only run on Friday.
-    // Hour guard is intentionally broad (6-12) to tolerate GitHub
-    // Actions cron delays of up to several hours.  The idempotency
-    // guard further down (`existingAlloc` check) prevents duplicate
-    // allocations if the endpoint is called more than once.
-    if (
-      nowLisbon.getDay() !== ALLOCATION_DAY ||
-      lisbonHour < 6 ||
-      lisbonHour > 12
-    ) {
+    // Friday only, from 06:00 Lisbon through the rest of that Friday.
+    // No upper hour bound: GitHub Actions has started this job at Lisbon
+    // hour 13 and hour 20, and `hour > 12` skipped those runs so the week
+    // was never published. The Monday-row idempotency check below stops a
+    // second call from rebuilding an already published week.
+    if (!isCronAllocationWindow(nowLisbon.getDay(), lisbonHour, ALLOCATION_DAY)) {
       return NextResponse.json({
         skipped: true,
         reason:  'Not the target Lisbon window for allocation',
