@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { sendWaitlistPromotionEmail } from '@/lib/resend'
+import { format, startOfWeek } from 'date-fns'
 import type { Profile, ParkingSpot } from '@/types/db'
 
 export async function POST(request: Request) {
@@ -38,6 +39,7 @@ export async function POST(request: Request) {
     // ─────────────────────────────────────────────────────────────────
 
     const serviceClient = await createServiceClient()
+    const weekStart = format(startOfWeek(new Date(date + 'T12:00:00'), { weekStartsOn: 1 }), 'yyyy-MM-dd')
 
     // ── RECLAIM ───────────────────────────────────────────────────────
     if (action === 'reclaim') {
@@ -90,6 +92,13 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'Unexpected error' }, { status: 500 })
       }
 
+      await serviceClient
+        .from('spot_releases')
+        .delete()
+        .eq('user_id', user.id)
+        .eq('spot_id', spot_id)
+        .eq('date', date)
+
       return NextResponse.json({ success: true, reclaimed: true })
     }
 
@@ -134,6 +143,22 @@ export async function POST(request: Request) {
 
       if (fixedResult.error) {
         return NextResponse.json({ error: fixedResult.error }, { status: 403 })
+      }
+
+      const { error: releaseMarkerError } = await serviceClient
+        .from('spot_releases')
+        .upsert(
+          {
+            user_id: user.id,
+            spot_id,
+            week_start: weekStart,
+            date,
+          },
+          { onConflict: 'user_id,spot_id,date' }
+        )
+
+      if (releaseMarkerError) {
+        return NextResponse.json({ error: releaseMarkerError.message }, { status: 500 })
       }
 
       if (fixedResult.promoted_user_id) {

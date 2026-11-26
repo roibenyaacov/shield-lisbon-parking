@@ -40,6 +40,7 @@ interface SpotInfo {
   isAvailable: boolean
   isFixedAndOccupiedByOwner: boolean
   isCurrentUserFixedSpot: boolean
+  isReleasedFixedSpot: boolean
 }
 
 export function MyWeek({ userId, fixedSpotId, fixedSpotLabel, userName }: MyWeekProps) {
@@ -69,7 +70,7 @@ export function MyWeek({ userId, fixedSpotId, fixedSpotLabel, userName }: MyWeek
       }
     })
 
-    const [allocsRes, waitlistRes] = await Promise.all([
+    const [allocsRes, waitlistRes, releasesRes] = await Promise.all([
       supabase
         .from('weekly_allocations')
         .select('*, spot:parking_spots(*)')
@@ -80,23 +81,33 @@ export function MyWeek({ userId, fixedSpotId, fixedSpotLabel, userName }: MyWeek
         .select('date')
         .eq('user_id', userId)
         .in('date', dates.map(d => d.date)),
+      fixedSpotId != null
+        ? supabase
+          .from('spot_releases')
+          .select('date')
+          .eq('user_id', userId)
+          .eq('spot_id', fixedSpotId)
+          .in('date', dates.map(d => d.date))
+        : Promise.resolve({ data: [] }),
     ])
 
     const allocs = (allocsRes.data ?? []) as (WeeklyAllocation & { spot: ParkingSpot })[]
     const waitlistedDates = new Set((waitlistRes.data ?? []).map((w: any) => w.date))
+    const releasedDates = new Set((releasesRes.data ?? []).map((r: any) => r.date))
 
     setDays(dates.map(d => {
       const alloc = allocs.find(a => a.date === d.date)
+      const isReleased = fixedSpotId != null && releasedDates.has(d.date)
       return {
         ...d,
-        spotLabel: alloc?.spot?.label ?? (fixedSpotId ? (fixedSpotLabel ?? null) : null),
+        spotLabel: alloc?.spot?.label ?? (!isReleased && fixedSpotId ? (fixedSpotLabel ?? null) : null),
         spotPriority: alloc?.spot?.priority ?? null,
-        spotId: alloc?.spot?.id ?? (fixedSpotId ?? null),
+        spotId: alloc?.spot?.id ?? (!isReleased ? (fixedSpotId ?? null) : null),
         waitlisted: waitlistedDates.has(d.date),
       }
     }))
     setLoading(false)
-  }, [userId, supabase])
+  }, [userId, fixedSpotId, fixedSpotLabel, supabase])
 
   useEffect(() => {
     loadWeek(weekOffset)
@@ -111,37 +122,45 @@ export function MyWeek({ userId, fixedSpotId, fixedSpotLabel, userName }: MyWeek
         if (expandedDay) loadDaySpots(expandedDay)
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'waitlist' }, () => loadWeek(weekOffset))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'spot_releases' }, () => {
+        loadWeek(weekOffset)
+        if (expandedDay) loadDaySpots(expandedDay)
+      })
       .subscribe()
     return () => { supabase.removeChannel(channel) }
   }, [supabase, loadWeek, weekOffset, expandedDay])
 
   const loadDaySpots = async (date: string) => {
     setSpotsLoading(true)
-    const [spotsRes, allocsRes] = await Promise.all([
+    const [spotsRes, allocsRes, releasesRes] = await Promise.all([
       supabase.from('parking_spots').select('*, fixed_user:profiles!parking_spots_fixed_user_id_fkey(full_name)').eq('is_active', true).order('label'),
       supabase.from('weekly_allocations').select('*, user:profiles(*)').eq('date', date),
+      supabase.from('spot_releases').select('spot_id').eq('date', date),
     ])
 
     const spots = (spotsRes.data ?? []) as (ParkingSpot & { fixed_user: { full_name: string } | null })[]
     const allocs = (allocsRes.data ?? []) as (WeeklyAllocation & { user: Profile })[]
+    const releasedSpotIds = new Set((releasesRes.data ?? []).map((r: any) => r.spot_id))
 
     setDaySpots(spots.map(s => {
       const alloc = allocs.find(a => a.spot_id === s.id)
       const isOwnerFixedSpot = fixedSpotId != null && fixedSpotId === s.id
+      const isReleasedFixedSpot = !!s.fixed_user_id && releasedSpotIds.has(s.id)
       const isSpot40ReservedFallback = s.label === '40'
       const isReserved = !!s.fixed_user_id || !!s.reserved_name || isSpot40ReservedFallback
-      const isOccupiedByFixedOwner = isReserved && (!alloc || alloc?.user_id === s.fixed_user_id)
+      const isOccupiedByFixedOwner = isReserved && !isReleasedFixedSpot && (!alloc || alloc?.user_id === s.fixed_user_id)
       return {
         id: s.id,
         label: s.label,
         priority: s.priority,
-        isFixed: isReserved,
+        isFixed: isReserved && !isReleasedFixedSpot,
         fixedOwnerName: s.fixed_user?.full_name ?? s.reserved_name ?? (isSpot40ReservedFallback ? 'Raissa Ramos' : null),
         occupantName: alloc?.user?.full_name ?? null,
         isCurrentUser: alloc?.user_id === userId,
         isAvailable: !alloc,
         isFixedAndOccupiedByOwner: isOccupiedByFixedOwner && !isOwnerFixedSpot,
         isCurrentUserFixedSpot: isOwnerFixedSpot,
+        isReleasedFixedSpot,
       }
     }))
     setSpotsLoading(false)
