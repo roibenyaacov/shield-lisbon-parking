@@ -2,7 +2,8 @@ import { NextResponse, type NextRequest } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { toZonedTime } from 'date-fns-tz'
 import { sendRegistrationReminders } from '@/lib/resend'
-import { LISBON_TIMEZONE, REQUEST_OPEN_DAY, REQUEST_OPEN_HOUR } from '@/lib/constants'
+import { LISBON_TIMEZONE } from '@/lib/constants'
+import { isReminderCronWindow } from '@/lib/reminder-window'
 import type { Profile } from '@/types/db'
 
 export async function GET(request: NextRequest) {
@@ -12,28 +13,19 @@ export async function GET(request: NextRequest) {
 
     const isCronAuthed = !!cronSecret && authHeader === `Bearer ${cronSecret}`
 
-    // ── DST-safe cron guard ──────────────────────────────────────────────
-    // Vercel cron runs in UTC.  We schedule both 18:00 UTC and 19:00 UTC
-    // each Wednesday — exactly one matches 19:00 Lisbon depending on DST.
-    // Skip the run if Lisbon time isn't the target (Wed 19:00).  Admin
-    // manual triggers bypass the guard.
+    // ── Cron guard ───────────────────────────────────────────────────────
+    // One Wednesday 17:00 UTC schedule. GitHub often starts it hours later.
+    // Accept Wednesday 15:00 through all of Thursday (Lisbon): a start after
+    // midnight is still inside the registration window. Admin cookie
+    // triggers bypass this guard.
     if (isCronAuthed) {
-      const nowLisbon  = toZonedTime(new Date(), LISBON_TIMEZONE)
-      const lisbonHour = nowLisbon.getHours()
-      // Day guard: only run on Wednesday.
-      // Hour guard is intentionally broad (15-23) to tolerate GitHub
-      // Actions cron delays of up to several hours.  The reminder is
-      // naturally idempotent — an extra send is harmless.
-      if (
-        nowLisbon.getDay() !== REQUEST_OPEN_DAY ||
-        lisbonHour < 15 ||
-        lisbonHour > 23
-      ) {
+      const nowLisbon = toZonedTime(new Date(), LISBON_TIMEZONE)
+      if (!isReminderCronWindow(nowLisbon)) {
         return NextResponse.json({
           skipped: true,
           reason:  'Not the target Lisbon window for reminders',
           lisbon_day:  nowLisbon.getDay(),
-          lisbon_hour: lisbonHour,
+          lisbon_hour: nowLisbon.getHours(),
         })
       }
     }
